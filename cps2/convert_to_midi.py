@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import re
 import struct
+import wave
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +16,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 ROM_DIR = BASE_DIR / "roms"
 MIDI_DIR = BASE_DIR / "midi"
+WAV_DIR = BASE_DIR / "wav"
+QSOUND_SAMPLE_RATE = 24038
 SEQUENCE_TABLE = 0x9005
 PPQN = 48
 MAX_STEPS = 100_000
@@ -97,11 +101,22 @@ class GameMetadata:
     archive: str
     name: str
     code_roms: tuple[tuple[int, str], ...]
+    pcm_roms: tuple[tuple[int, str], ...]
     titles: dict[int, str]
     instrument_table_offset: int | None
     instrument_banks: int | None
+    instrument_table_format: str
     sample_table_offset: int | None
     sample_table_length: int | None
+
+
+@dataclass(frozen=True)
+class QSoundSample:
+    bank: int
+    start: int
+    loop: int
+    end: int
+    unity_key: int
 
 
 def read_game_metadata(xml_path: Path) -> GameMetadata:
@@ -120,17 +135,19 @@ def read_game_metadata(xml_path: Path) -> GameMetadata:
         raise ValueError(f"invalid ROM archive name in {xml_path}")
 
     code_roms: list[tuple[int, str]] = []
+    pcm_roms: list[tuple[int, str]] = []
     for rom in romlist.findall("rom"):
-        if rom.get("type") != "code":
+        rom_type = rom.get("type")
+        if rom_type not in ("code", "pcm"):
             continue
         filename = (rom.text or "").strip()
         try:
             offset = int(rom.get("offset", ""), 0)
         except ValueError as error:
-            raise ValueError(f"invalid code ROM offset for {filename!r}") from error
+            raise ValueError(f"invalid {rom_type} ROM offset for {filename!r}") from error
         if not filename or Path(filename).name != filename or offset < 0:
-            raise ValueError(f"invalid code ROM entry in {xml_path}")
-        code_roms.append((offset, filename))
+            raise ValueError(f"invalid {rom_type} ROM entry in {xml_path}")
+        (code_roms if rom_type == "code" else pcm_roms).append((offset, filename))
     if not code_roms:
         raise ValueError(f"no <rom type=\"code\"> entries in {xml_path}")
 
@@ -153,6 +170,11 @@ def read_game_metadata(xml_path: Path) -> GameMetadata:
         except ValueError as error:
             raise ValueError(f"invalid {attribute!r} value {value!r} in {xml_path}") from error
     instrument_banks = table_values["instrument_banks"]
+    instrument_table_format = romlist.get("instrument-table-format", "linear").strip().lower()
+    if instrument_table_format not in ("linear", "pointers"):
+        raise ValueError(
+            f"unsupported instrument-table-format {instrument_table_format!r} in {xml_path}"
+        )
     sample_table_length = table_values["sample_table_length"]
     if instrument_banks is not None and instrument_banks <= 0:
         raise ValueError(f"'instrument-banks' must be positive in {xml_path}")
@@ -178,11 +200,16 @@ def read_game_metadata(xml_path: Path) -> GameMetadata:
     if not titles:
         raise ValueError(f"no <title> entries in {xml_path}")
     return GameMetadata(
-        archive,
-        root.findtext("name", "").strip(),
-        tuple(code_roms),
-        titles,
-        **table_values,
+        archive=archive,
+        name=root.findtext("name", "").strip(),
+        code_roms=tuple(code_roms),
+        pcm_roms=tuple(pcm_roms),
+        titles=titles,
+        instrument_table_offset=table_values["instrument_table_offset"],
+        instrument_banks=instrument_banks,
+        instrument_table_format=instrument_table_format,
+        sample_table_offset=table_values["sample_table_offset"],
+        sample_table_length=sample_table_length,
     )
 
 
@@ -200,43 +227,193 @@ def load_code_rom(metadata: GameMetadata) -> bytes:
             raise ValueError(f"code ROM overlaps another ROM at offset 0x{offset:x}: {filename}")
         end = offset + len(rom)
     image = bytearray(b"\xff" * end)
-    for offset, rom, _filename in roms:
+    for rom_entry in roms:
+        offset, rom = rom_entry[0], rom_entry[1]
         image[offset : offset + len(rom)] = rom
     return bytes(image)
 
 
-def load_sample_unity_keys(data: bytes, metadata: GameMetadata) -> dict[tuple[int, int], int]:
+def load_pcm_rom(metadata: GameMetadata) -> bytes:
+    if not metadata.pcm_roms:
+        raise ValueError(f"no <rom type=\"pcm\"> entries for archive {metadata.archive!r}")
+
+    roms: list[tuple[int, bytes, str]] = []
+    for offset, filename in sorted(metadata.pcm_roms):
+        path = ROM_DIR / metadata.archive / filename
+        if not path.is_file():
+            raise FileNotFoundError(f"PCM ROM not found: {path}")
+        raw = path.read_bytes()
+        if len(raw) % 2:
+            raise ValueError(f"PCM ROM size must be even for 16-bit word swap: {path}")
+        swapped = bytearray(len(raw))
+        swapped[0::2] = raw[1::2]
+        swapped[1::2] = raw[0::2]
+        roms.append((offset, bytes(swapped), filename))
+
+    end = 0
+    for offset, rom, filename in roms:
+        if offset < end:
+            raise ValueError(f"PCM ROM overlaps another ROM at offset 0x{offset:x}: {filename}")
+        end = offset + len(rom)
+    image = bytearray(b"\xff" * end)
+    for rom_entry in roms:
+        offset, rom = rom_entry[0], rom_entry[1]
+        image[offset : offset + len(rom)] = rom
+    return bytes(image)
+
+
+def load_qsound_samples(data: bytes, metadata: GameMetadata) -> list[QSoundSample]:
     if (
         metadata.sample_table_offset is None
         or metadata.sample_table_length is None
-        or metadata.instrument_table_offset is None
-        or metadata.instrument_banks is None
     ):
-        raise ValueError(
-            "unity-key transposition requires instrument-table, instrument-banks, "
-            "sample-table, and sample-table-length XML attributes"
-        )
+        raise ValueError("PCM WAV extraction requires sample-table and sample-table-length XML attributes")
     sample_start = metadata.sample_table_offset
     sample_end = sample_start + metadata.sample_table_length
-    instrument_count = metadata.instrument_banks * 256
-    instrument_start = metadata.instrument_table_offset
-    instrument_end = instrument_start + instrument_count * 8
     if sample_end > len(data):
         raise ValueError("sample table extends past the code ROM image")
-    if instrument_end > len(data):
-        raise ValueError("instrument table extends past the code ROM image")
+    return [
+        QSoundSample(
+            bank=data[offset],
+            start=int.from_bytes(data[offset + 1 : offset + 3], "little"),
+            loop=int.from_bytes(data[offset + 3 : offset + 5], "little"),
+            end=int.from_bytes(data[offset + 5 : offset + 7], "little"),
+            unity_key=data[offset + 7],
+        )
+        for offset in range(sample_start, sample_end, 8)
+    ]
 
-    unity_keys = tuple(data[offset + 7] for offset in range(sample_start, sample_end, 8))
-    instrument_keys: dict[tuple[int, int], int] = {}
-    for bank in range(metadata.instrument_banks * 2):
-        bank_offset = (bank // 2) * 256 + (bank % 2) * 128
-        for program in range(128):
-            row = bank_offset + program
-            offset = instrument_start + row * 8
+
+def load_instrument_sample_indices(
+    data: bytes, metadata: GameMetadata
+) -> dict[tuple[int, int], int]:
+    if metadata.instrument_table_offset is None or metadata.instrument_banks is None:
+        raise ValueError("instrument sample mapping requires instrument-table and instrument-banks XML attributes")
+
+    instrument_start = metadata.instrument_table_offset
+    indices: dict[tuple[int, int], int] = {}
+    if metadata.instrument_table_format == "linear":
+        instrument_end = instrument_start + metadata.instrument_banks * 256 * 8
+        if instrument_end > len(data):
+            raise ValueError("instrument table extends past the code ROM image")
+        for bank in range(metadata.instrument_banks * 2):
+            bank_offset = (bank // 2) * 256 + (bank % 2) * 128
+            for program in range(128):
+                row = bank_offset + program
+                offset = instrument_start + row * 8
+                indices[(bank, program)] = int.from_bytes(data[offset : offset + 2], "little")
+        return indices
+
+    pointer_end = instrument_start + metadata.instrument_banks * 2
+    if pointer_end > len(data):
+        raise ValueError("instrument table pointer list extends past the code ROM image")
+    pointers = [
+        int.from_bytes(data[offset : offset + 2], "little")
+        for offset in range(instrument_start, pointer_end, 2)
+    ]
+    for bank_index, table_start in enumerate(pointers):
+        if not table_start:
+            continue
+        if bank_index + 1 < len(pointers) and pointers[bank_index + 1] > table_start:
+            table_end = pointers[bank_index + 1]
+        else:
+            table_end = table_start + 4 * 256
+        if table_end > len(data) or table_start > table_end:
+            raise ValueError(f"instrument table bank {bank_index} extends past the code ROM image")
+        row_count = (table_end - table_start) // 4
+        for row in range(min(row_count, 256)):
+            offset = table_start + row * 4
             sample_index = int.from_bytes(data[offset : offset + 2], "little")
-            if sample_index < len(unity_keys):
-                instrument_keys[(bank, program)] = unity_keys[sample_index]
-    return instrument_keys
+            if bank_index != 0 and sample_index == 0 and data[offset + 2] == 0:
+                break
+            bank = bank_index * 2 + row // 128
+            program = row % 128
+            indices[(bank, program)] = sample_index
+    return indices
+
+
+def load_sample_unity_keys(data: bytes, metadata: GameMetadata) -> dict[tuple[int, int], int]:
+    samples = load_qsound_samples(data, metadata)
+    instrument_samples = load_instrument_sample_indices(data, metadata)
+    return {
+        key: samples[resolve_sample_index(sample_index, len(samples))].unity_key
+        for key, sample_index in instrument_samples.items()
+    }
+
+
+def resolve_sample_index(sample_index: int, sample_count: int) -> int:
+    # Match the QSound instrument parser's legacy bank flag and invalid-index fallback.
+    if sample_index >= 0x8000:
+        sample_index -= 0x8000
+    return sample_index if sample_index < sample_count else 0
+
+
+def write_qsound_wavs(
+    code_rom: bytes,
+    pcm_rom: bytes,
+    metadata: GameMetadata,
+    output_dir: Path,
+) -> int:
+    samples = load_qsound_samples(code_rom, metadata)
+    instrument_samples = load_instrument_sample_indices(code_rom, metadata)
+    resolved_indices = {
+        key: resolve_sample_index(sample_index, len(samples))
+        for key, sample_index in instrument_samples.items()
+    }
+    referenced_samples = sorted(set(resolved_indices.values()))
+    if not referenced_samples:
+        raise ValueError(f"no instrument sample references found for {metadata.archive!r}")
+
+    base_address = samples[0].bank << 16
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for sample_index in referenced_samples:
+        sample = samples[sample_index]
+        start = (sample.bank << 16) | sample.start
+        end = (
+            (sample.bank + 1) << 16
+            if sample.end == 0
+            else (sample.bank << 16) | sample.end
+        )
+        start -= base_address
+        end -= base_address
+        if end < start:
+            end = start
+        if start < 0 or end > len(pcm_rom):
+            raise ValueError(
+                f"sample {sample_index} range 0x{start:x}-0x{end:x} "
+                f"exceeds PCM ROM size 0x{len(pcm_rom):x}"
+            )
+        pcm = memoryview(pcm_rom)[start:end]
+        path = output_dir / f"{sample_index:03d}.wav"
+        with wave.open(str(path), "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(QSOUND_SAMPLE_RATE)
+            chunk_size = 32768
+            for offset in range(0, len(pcm), chunk_size):
+                chunk = pcm[offset : offset + chunk_size]
+                frames = bytearray(len(chunk) * 2)
+                # QSound's signed 8-bit values occupy the high byte of a 16-bit sample.
+                frames[1::2] = chunk
+                wav_file.writeframesraw(frames)
+
+    manifest_path = output_dir / "instruments.csv"
+    with manifest_path.open("w", encoding="utf-8", newline="") as manifest_file:
+        writer = csv.writer(manifest_file)
+        writer.writerow(("bank", "program", "source_sample_index", "sample", "unity_key", "wav"))
+        for (bank, program), source_index in sorted(instrument_samples.items()):
+            sample_index = resolved_indices[(bank, program)]
+            writer.writerow(
+                (
+                    bank,
+                    program,
+                    source_index,
+                    sample_index,
+                    samples[sample_index].unity_key,
+                    f"{sample_index:03d}.wav",
+                )
+            )
+    return len(referenced_samples)
 
 
 def read_u16(data: bytes, offset: int) -> int:
@@ -615,6 +792,30 @@ def convert_game(
         raise ValueError("unity key reference must be between 0 and 127")
     metadata = read_game_metadata(xml_path)
     data = load_code_rom(metadata)
+    wav_count = 0
+    if metadata.pcm_roms:
+        if (
+            metadata.instrument_table_offset is not None
+            and metadata.instrument_banks is not None
+            and metadata.sample_table_offset is not None
+            and metadata.sample_table_length is not None
+        ):
+            pcm_data = load_pcm_rom(metadata)
+            wav_count = write_qsound_wavs(
+                data,
+                pcm_data,
+                metadata,
+                WAV_DIR / metadata.archive,
+            )
+            print(
+                f"Generated {wav_count} QSound sample WAV files "
+                f"and instrument map in {WAV_DIR / metadata.archive}"
+            )
+        else:
+            print(
+                f"Skipping QSound WAV extraction for {metadata.archive}: "
+                "instrument/sample table metadata is incomplete"
+            )
     sample_unity_keys = (
         load_sample_unity_keys(data, metadata) if unity_key_reference is not None else None
     )

@@ -2,7 +2,7 @@
 		<name>[CPS-2] Vampire Savior: The Lord of Vampire (???@???p?C?A?Z?C???@?[ -?U?E???[?h?I?u???@???p?C?A-) (QSound)</name>
 		<driver type="cps2">capcom</driver>
 		<driveralias type="ARCADE">Capcom</driveralias>
-		<romlist archive="vsav">
+		<romlist archive="vsav" instrument-table-format="pointers" instrument-table="0x3B04" instrument-banks="7" sample-table="0x45FA" sample-table-length="0x1420">
 			<rom type="code" offset="0x00000">vm3.01</rom>
 			<rom type="code" offset="0x20000">vm3.02</rom>
 			<rom type="pcm" offset="0x000000">vm3.11m</rom>

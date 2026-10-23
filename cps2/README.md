@@ -7,6 +7,7 @@
 - ROMファイル: `roms/<archive>/`
 - ゲーム情報XML: `games/`
 - 生成するMIDIファイル: `midi/<archive>/`
+- 生成するQSoundサンプルWAV: `wav/<archive>/`
 
 ## 使い方
 
@@ -36,12 +37,27 @@ python .\cps2\convert_to_midi.py .\cps2\games\ssf2t.xml --unity-key-reference 60
 XMLの `<romlist>` には `archive` 属性を指定し、ROMごとに `type`、`offset`、
 ファイル名を記述します。`type="code"` のROMは
 `cps2/roms/<archive>/` から読み込まれ、指定されたオフセットに配置して
-コードROMイメージを構成します。PCM ROMもXMLに記載できますが、現在の変換器は
-サンプル波形自体は読み取りません。`<romlist>` には音源メタデータとして
+コードROMイメージを構成します。`type="pcm"` のROMも同じフォルダーから読み込み、
+QSoundサンプルのWAV出力に使用します。`<romlist>` には音源メタデータとして
 `instrument-table`、`instrument-banks`、`sample-table`、
 `sample-table-length` も指定します。これらはコードROM内の楽器表とサンプル情報表の
-位置・サイズです。楽器番号からサンプル番号を引き、サンプル情報表から
-`unity_key` を取得します。
+位置・サイズです。通常の連続した楽器表は既定の形式で読み込みます。
+別バンクへのポインターを持つ形式では、`instrument-table-format="pointers"` を指定します。
+
+## QSoundサンプルWAV
+
+変換時に、楽器表から参照されるユニークなサンプルを
+`cps2/wav/<archive>/<sample番号>.wav` に出力します。同じサンプルを使う複数の楽器は
+同じWAVを共有します。`instruments.csv` にはMIDIのバンク・プログラム番号、
+サンプル番号、`unity_key`、WAV名の対応を記録します。
+
+WAVはモノラル、16-bit PCM、24,038 Hzです。CPS-2のPCM ROM配置に合わせた
+16-bitワードスワップを行い、サンプル情報表の開始・終了位置から波形を抽出します。
+このWAV出力は波形データの抽出であり、QSoundのループ位置や音量エンベロープは
+WAVに反映しません。サンプル表の範囲外を指す楽器番号は、QSoundの既知の解析動作に
+合わせてサンプル0へ割り当てます。XMLに楽器表・サンプル表のメタデータがない場合は
+抽出を明示的にスキップします。対応するROMとテーブル情報のあるX-Men: Children of
+the Atom、Super Street Fighter II Turbo、Vampire Saviorを収録しています。
 
 `<titlelist>` には、変換する各曲のシーケンスコードと表示名を記述します。
 [xmcota.xml](./games/xmcota.xml) はXMLの記述例です。
@@ -87,6 +103,7 @@ MIDI出力との差は14ビットのピッチホイール量子化の範囲内�
 
 この初期版では、ゲームごとのROM配置と曲情報をXMLで指定できますが、シーケンス
 解析はCPS-2 V1.05の音楽ドライバーと既知のコマンドテーブルを対象としています。
-出力するのは解析した音符・制御イベントであり、QSoundのサンプルROMやCPS-2の
-楽器エンベロープではありません。そのため、再生にはMIDIプレーヤー側の音源が使われ、
-ゲーム本来のQSound音色とは異なります。
+MIDIには解析した音符・制御イベントを出力します。抽出したQSound WAVは個別の
+サンプルファイルであり、MIDI音色として自動的に組み立てる処理やCPS-2の
+楽器エンベロープ再現は行いません。そのため、MIDIの再生にはMIDIプレーヤー側の
+音源が使われ、ゲーム本来のQSound音色とは異なります。
