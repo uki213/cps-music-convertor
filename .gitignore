@@ -1,0 +1,15 @@
+# ROM images
+/cps1/roms/
+/cps2/roms/
+
+# Generated MIDI, PCM WAV, and voice libraries
+/cps1/midi/
+/cps1/wav/
+/cps1/voices/
+/cps2/midi/
+/cps2/wav/
+/cps2/voices/
+
+# Python bytecode
+__pycache__/
+*.py[cod]

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+	<game>
+		<name>[CPS-2] Super Street Fighter II Turbo</name>
+		<driver type="cps2">capcom</driver>
+		<driveralias type="ARCADE">Capcom</driveralias>
+		<romlist archive="ssf2t" instrument-table="0x7000" instrument-banks="2" sample-table="0x8000" sample-table-length="0x800">
+			<rom type="code" offset="0x00000">sfx.01</rom>
+			<rom type="code" offset="0x20000">sfx.02</rom>
+			<rom type="pcm" offset="0x000000">sfx.11m</rom>
+			<rom type="pcm" offset="0x200000">sfx.12m</rom>
+		</romlist>
+		<titlelist>
+			<title code="0x3d">QSound Logo</title>								
+			<title code="0xd4">Opening Demo</title>							 
+			<title code="0xd3">Player Select</title>							
+			<title code="0x35">VS.</title>												
+			<title code="0x02">Ryu Stage I</title>
+			<title code="0x12">Ryu Stage II</title>							 
+			<title code="0x23">Ryu Ending</title>								 
+			<title code="0x01">Ken Stage I</title>								
+			<title code="0x11">Ken Stage II</title>							 
+			<title code="0x22">Ken Ending I</title>							 
+			<title code="0x21">Ken Ending II</title>							
+			<title code="0x03">E. Honda Stage I</title>					 
+			<title code="0x13">E. Honda Stage II</title>					
+			<title code="0x24">E. Honda Ending</title>						
+			<title code="0x04">Chun-Li Stage I</title>						
+			<title code="0x14">Chun-Li Stage II</title>					 
+			<title code="0x25">Chun-Li Ending I</title>					 
+			<title code="0x26">Chun-Li Ending II</title>					
+			<title code="0x3e">Chun-Li Ending III</title>				 
+			<title code="0x05">Blanka Stage I</title>						 
+			<title code="0x15">Blanka Stage II</title>						
+			<title code="0x27">Blanka Ending</title>							
+			<title code="0x06">Zangief Stage I</title>						
+			<title code="0x16">Zangief Stage II</title>					 
+			<title code="0x28">Zangief Ending</title>						 
+			<title code="0x07">Guile Stage I</title>							
+			<title code="0x17">Guile Stage II</title>						 
+			<title code="0x29">Guile Ending</title>							 
+			<title code="0x08">Dhalsim Stage I</title>						
+			<title code="0x18">Dhalsim Stage II</title>					 
+			<title code="0x2a">Dhalsim Ending</title>						 
+			<title code="0x0f">T. Hawk Stage I</title>						
+			<title code="0x1f">T. Hawk Stage II</title>					 
+			<title code="0x31">T. Hawk Ending</title>						 
+			<title code="0x0e">Cammy Stage I</title>							
+			<title code="0x1e">Cammy Stage II</title>						 
+			<title code="0x30">Cammy Ending</title>							 
+			<title code="0x0d">Fei Long Stage I</title>					 
+			<title code="0x1d">Fei Long Stage II</title>					
+			<title code="0x2f">Fei Long Ending</title>						
+			<title code="0x10">Dee Jay Stage I</title>						
+			<title code="0x20">Dee Jay Stage II</title>					 
+			<title code="0x32">Dee Jay Ending</title>						 
+			<title code="0x09">Balrog Stage I</title>						 
+			<title code="0x19">Balrog Stage II</title>						
+			<title code="0x2b">Balrog Ending</title>							
+			<title code="0x0a">Vega Stage I</title>							 
+			<title code="0x1a">Vega Stage II</title>							
+			<title code="0x2c">Vega Ending</title>								
+			<title code="0x0b">Sagat Stage I</title>							
+			<title code="0x1b">Sagat Stage II</title>						 
+			<title code="0x2d">Sagat Ending</title>							 
+			<title code="0x0c">M. Bison Stage I</title>					 
+			<title code="0x1c">M. Bison Stage II</title>					
+			<title code="0x2e">M. Bison Ending</title>						
+			<title code="0x36">Stage End</title>									
+			<title code="0x38">Here Comes A New Challenger</title>
+			<title code="0xd5">Theme of Akuma I</title>					 
+			<title code="0xd6">Theme of Akuma II</title>					
+			<title code="0x3c">Credits Roll</title>							 
+			<title code="0x37">Continue</title>									 
+			<title code="0x39">Game Over</title>									
+			<title code="0x3a">Ranking Display</title>						
+			<title code="0xd2">Unused</title>										 
+			<title code="0x33">Opening Demo</title>							 
+			<title code="0x34">Player Select</title>							
+			<title code="0x3f">Tournament</title>								 
+			<title code="0x3b">Bonus Stage</title>								
+			<title code="0xc1">Congratulations!</title>					 
+			<title code="0xd1">QSound Logo 2</title>							
+		</titlelist>
+	</game>

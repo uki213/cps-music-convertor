@@ -1,0 +1,90 @@
+	<game>
+		<name>[CPS-2] Vampire Savior: The Lord of Vampire (???@???p?C?A?Z?C???@?[ -?U?E???[?h?I?u???@???p?C?A-) (QSound)</name>
+		<driver type="cps2">capcom</driver>
+		<driveralias type="ARCADE">Capcom</driveralias>
+		<romlist archive="vsav">
+			<rom type="code" offset="0x00000">vm3.01</rom>
+			<rom type="code" offset="0x20000">vm3.02</rom>
+			<rom type="pcm" offset="0x000000">vm3.11m</rom>
+			<rom type="pcm" offset="0x400000">vm3.12m</rom>
+		</romlist>
+		<titlelist>
+			<title code="0x55">Q Sound Logo Main</title>																			
+			<title code="0x57">Dirty Beret</title>																						
+			<title code="0x01">Opening Title</title>																					
+			<title code="0x08">Ranking Display</title>																				
+			<title code="0x02">Player Select (1)</title>																			
+			<title code="0x03">Player Select (2)</title>																			
+			<title code="0x05">VS.</title>																										
+			<title code="0x09">Feast of the Damned (Demitri's Theme)</title>									
+			<title code="0x16">Demitri: Winning Theme</title>																 
+			<title code="0x26">Demitri: Ending Theme (1)</title>															
+			<title code="0x36">Demitri: Ending Theme (2)</title>															
+			<title code="0x0f">Vanity Paradise (Lei-Lei's Theme)</title>
+			<title code="0x22">Lei-Lei: Winning Theme</title>																 
+			<title code="0x32">Lei-Lei: Ending Theme (1)</title>															
+			<title code="0x42">Lei-Lei: Ending Theme (2)</title>															
+			<title code="0x46">Story Demo (1)</title>																				 
+			<title code="0x12">Green Scream (Aulbath and Susquatch's Theme)</title>					 
+			<title code="0x1e">Aulbath: Winning Theme</title>																 
+			<title code="0x2e">Aulbath: Ending Theme (1)</title>															
+			<title code="0x3e">Aulbath: Ending Theme (2)</title>															
+			<title code="0x1f">Susquatch: Winning Theme</title>															 
+			<title code="0x2f">Susquatch: Ending Theme (1)</title>														
+			<title code="0x3f">Susquatch: Ending Theme (2)</title>														
+			<title code="0x0b">Tower of Arrogance (Felicia's Theme)</title>									 
+			<title code="0x1c">Felicia: Winning Theme</title>																 
+			<title code="0x2c">Felicia: Ending Theme (1)</title>															
+			<title code="0x3c">Felicia: Ending Theme (2)</title>															
+			<title code="0x0e">Abaraya (1) (Bishamon's Theme)</title>												 
+			<title code="0x4e">Story Demo (2) (Oboro Bishamon's Demo)</title>
+			<title code="0x4f">Abaraya (2) (Oboro Bishamon's Theme)</title>									 
+			<title code="0x1d">Bishamon: Winning Theme</title>																
+			<title code="0x2d">Bishamon: Ending Theme (1)</title>														 
+			<title code="0x3d">Bishamon: Ending Theme (2)</title>														 
+			<title code="0x10">War Agony (Lilith's Theme)</title>														 
+			<title code="0x23">Lilith: Winning Theme</title>																	
+			<title code="0x33">Lilith: Ending Theme (1)</title>															 
+			<title code="0x43">Lilith: Ending Theme (2)</title>															 
+			<title code="0x15">Bulleta: Winning Theme</title>																 
+			<title code="0x25">Bulleta: Ending Theme (1)</title>															
+			<title code="0x35">Bulleta: Ending Theme (2)</title>															
+			<title code="0x0d">Deserted Chateau (Morrigan's Theme)</title>										
+			<title code="0x1a">Morrigan: Winning Theme</title>																
+			<title code="0x2a">Morrigan: Ending Theme (1)</title>														 
+			<title code="0x3a">Morrigan: Ending Theme (2)</title>														 
+			<title code="0x0a">Concrete Cave (Bulleta and Gallon's Theme)</title>						 
+			<title code="0x17">Gallon: Winning Theme (1)</title>															
+			<title code="0x52">Gallon: Winning Theme (2) (Dark Gallon: Winning Theme?)</title>
+			<title code="0x27">Gallon: Ending Theme (1)</title>															 
+			<title code="0x37">Gallon: Ending Theme (2)</title>															 
+			<title code="0x04">Here Comes a New Challenger</title>														
+			<title code="0x11">Forever Torment (Vitor and Zabel's Theme)</title>							
+			<title code="0x19">Zabel: Winning Theme</title>																	 
+			<title code="0x29">Zabel: Ending Theme (1)</title>																
+			<title code="0x39">Zabel: Ending Theme (2)</title>																
+			<title code="0x18">Victor: Winning Theme</title>																	
+			<title code="0x28">Victor: Ending Theme (1)</title>															 
+			<title code="0x38">Victor: Ending Theme (2)</title>															 
+			<title code="0x0c">Red Thirst (Anakaris' Theme)</title>													 
+			<title code="0x1b">Anakaris: Winning Theme</title>																
+			<title code="0x2b">Anakaris: Ending Theme (1)</title>														 
+			<title code="0x3b">Anakaris: Ending Theme (2)</title>														 
+			<title code="0x13">Iron Horse, Iron Terror (Q-Bee's Theme)</title>								
+			<title code="0x21">Q-Bee Winning Theme</title>																		
+			<title code="0x31">Q-Bee Ending Theme</title>																		 
+			<title code="0x47">Story Demo (3) (Last Boss's Demo)</title>											
+			<title code="0x14">Fetus of God (Jedah's Theme)</title>													 
+			<title code="0x24">Jedah: Winning Theme</title>																	 
+			<title code="0x34">Jedah: Ending Theme (1)</title>																
+			<title code="0x44">Jedah: Ending Theme (2)</title>																
+			<title code="0x50">Shadow: Winning Theme</title>																	
+			<title code="0x51">Shadow: Ending Theme</title>																	 
+			<title code="0x06">Continue</title>																							 
+			<title code="0x07">Game Over</title>																							
+			<title code="0x45">Credits Roll</title>																					 
+			<title code="0x53">Special Ending (1)</title>																		 
+			<title code="0x54">Special Ending (2)</title>																		 
+			<title code="0x56">Q Sound Logo Sub</title>																			 
+		</titlelist>
+	</game>

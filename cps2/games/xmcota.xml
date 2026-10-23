@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<game>
+    <name>X-Men: Children of the Atom (QSound)</name>
+    <driver type="cps2">capcom</driver>
+    <driveralias type="ARCADE">Capcom</driveralias>
+    <romlist archive="xmcota" instrument-table="0x7000" instrument-banks="2" sample-table="0x8000" sample-table-length="0x978">
+        <rom type="code" offset="0x00000">xmn.01a</rom>
+        <rom type="code" offset="0x20000">xmn.02a</rom>
+        <rom type="pcm" offset="0x000000">xmn.11m</rom>
+        <rom type="pcm" offset="0x200000">xmn.12m</rom>
+    </romlist>
+    <titlelist>
+        <title code="0x1a">QSound Logo</title>
+        <title code="0x1c">Opening Title</title>
+        <title code="0x70">Credit</title>
+        <title code="0x01">Player Select</title>
+        <title code="0x07">Savage Land (Wolverine)</title>
+        <title code="0x08">Moon Night (Psylocke)</title>
+        <title code="0x09">Mutant Hunting (Colossus)</title>
+        <title code="0x0a">Danger Room (Cyclops)</title>
+        <title code="0x0b">On the Blackbird (Storm)</title>
+        <title code="0x0c">Ice on the Beach (Iceman)</title>
+        <title code="0x05">Winner</title>
+        <title code="0x06">Here Comes A New Charenger!</title>
+        <title code="0x0d">Mojo World (Spiral)</title>
+        <title code="0x0e">Samurai Shrine (Silver Samurai)</title>
+        <title code="0x0f">The Deep (Omega Red)</title>
+        <title code="0x10">Genosha (Sentinel)</title>
+        <title code="0x11">Space Port (Juggernaut)</title>
+        <title code="0x12">Avalon (Magneto)</title>
+        <title code="0x18">Ending - The Theme of Battle</title>
+        <title code="0x13">Ending - Forest</title>
+        <title code="0x14">Ending - Summer Beach</title>
+        <title code="0x15">Ending - The Theme of Mojo 1</title>
+        <title code="0x1d">Ending - The Theme of Mojo 2</title>
+        <title code="0x17">Ending - Crossrd in Love</title>
+        <title code="0x16">Ending - Love and Friendship</title>
+        <title code="0x19">Credits Roll</title>
+        <title code="0x03">Continue</title>
+        <title code="0x04">Game Over</title>
+        <title code="0x02">Get out of Danger</title>
+    </titlelist>
+</game>
