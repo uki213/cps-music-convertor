@@ -72,8 +72,11 @@ def read_game(path: Path) -> Game:
     tables_text = (romlist.get("tables") or "").strip()
     tables_offset = int(tables_text, 0) if tables_text else 0
     version = (romlist.get("format-version") or "CPS1_V4.25").strip()
-    if version != "CPS1_V4.25":
-        raise ValueError(f"unsupported CPS-1 format version {version!r}; expected 'CPS1_V4.25'")
+    if version not in ("CPS1_V4.25", "CPS1_V2.00"):
+        raise ValueError(f"unsupported CPS-1 format version {version!r}; expected 'CPS1_V4.25' or 'CPS1_V2.00'")
+    
+    # For now, we treat both versions the same way since they're likely to be
+    # compatible at the core conversion level, but can be extended for specific differences
 
     roms: list[tuple[int, str]] = []
     pcm_roms: list[tuple[int, str]] = []
