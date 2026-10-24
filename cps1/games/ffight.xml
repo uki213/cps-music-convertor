@@ -1,0 +1,60 @@
+	<game>
+		<name>[CPS-1] Final Fight (ファイナルファイト) (YM2151+MSM6295)</name>
+		<driver type="cps1">capcom</driver>
+		<driveralias type="ARCADE">Capcom</driveralias>
+		<options>
+			<option name="pcm_mix" value="0x3c"/>
+		</options>
+		<romlist archive="ffight">
+			<rom type="code" offset="0x00000">ff_09.12b</rom>
+			<rom type="pcm" offset="0x00000">ff_18.11c</rom>
+			<rom type="pcm" offset="0x20000">ff_19.12c</rom>
+		</romlist>
+		<titlelist>
+			<title code="0xf0">Stop the Music</title>
+			<title code="0x95">[SFX] Phone 1</title>
+			<title code="0x96">[SFX] Phone 2</title>
+			<title code="0x52">Demo BGM</title>
+			<title code="0x5F">Credit Inserted</title>
+			<title code="0x55">Player Select</title>
+			<title code="0x50">Opening</title>
+			<title code="0x88">[Voice] Ahhhahahaha... (Damnd)</title>
+			<title code="0x40">BGM 1</title>
+			<title code="0x41">BGM 2</title>
+			<title code="0x40">BGM 1</title>
+			<title code="0x57">Round Clear</title>
+			<title code="0x85">[Voice] Haaaahhhh!</title>
+			<title code="0x42">BGM 3</title>
+			<title code="0x94">[SFX] Subway 1</title>
+			<title code="0x93">[SFX] Subway 2</title>
+			<title code="0x43">BGM 4</title>
+			<title code="0x4C">Bonus Stage</title>
+			<title code="0x76">[SFX]</title>
+			<title code="0x8E">[Voice] Oh! My God!! (Bred)</title>
+			<title code="0x40">BGM 1</title>
+			<title code="0x44">BGM 5</title>
+			<title code="0x40">BGM 1</title>
+			<title code="0x44">BGM 5</title>
+			<title code="0x48">BGM 9</title>
+			<title code="0x49">BGM 10</title>
+			<title code="0x45">BGM 6</title>
+			<title code="0x46">BGM 7</title>
+			<title code="0x47">BGM 8</title>
+			<title code="0x90">[SFX] Elevator 1</title>
+			<title code="0x91">[SFX] Elevator 2</title>
+			<title code="0x92">[SFX] Elevator 3</title>
+			<title code="0x89">[Voice] Hah!</title>
+			<title code="0x40">BGM 1</title>
+			<title code="0x49">BGM 10</title>
+			<title code="0x42">BGM 3</title>
+			<title code="0x9D">[Voice] Huhahahaha...! (Belger)</title>
+			<title code="0x47">BGM 8</title>
+			<title code="0x9E">[Voice] Aahhhh... (Belger)</title>
+			<title code="0x6D">[SFX] Belger's End</title>
+			<title code="0x58">Last Round Clear</title>
+			<title code="0x54">Ending</title>
+			<title code="0x53">Continue</title>
+			<title code="0x51">Game Over</title>
+		</titlelist>
+	</game>
+	<game>

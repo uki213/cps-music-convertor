@@ -1,6 +1,6 @@
 # ROM images
-/cps1/roms/
-/cps2/roms/
+/cps1/roms/*.zip
+/cps2/roms/*.zip
 
 # Generated MIDI, PCM WAV, and voice libraries
 /cps1/midi/
