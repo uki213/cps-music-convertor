@@ -9,6 +9,7 @@ import re
 import struct
 import wave
 import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -213,13 +214,30 @@ def read_game_metadata(xml_path: Path) -> GameMetadata:
     )
 
 
+def read_rom_file(archive: str, filename: str) -> bytes:
+    """Read a single ROM, resolving it from the folder or a ZIP archive."""
+    folder_path = ROM_DIR / archive / filename
+    if folder_path.is_file():
+        return folder_path.read_bytes()
+
+    zip_path = ROM_DIR / f"{archive}.zip"
+    if zip_path.is_file():
+        name = f"{archive}/{filename}".replace("\\", "/")
+        try:
+            with zipfile.ZipFile(zip_path) as archive_file:
+                return archive_file.read(name)
+        except KeyError:
+            pass
+
+    raise FileNotFoundError(
+        f"ROM not found: {folder_path} or {filename!r} in {zip_path}"
+    )
+
+
 def load_code_rom(metadata: GameMetadata) -> bytes:
     roms: list[tuple[int, bytes, str]] = []
     for offset, filename in sorted(metadata.code_roms):
-        path = ROM_DIR / metadata.archive / filename
-        if not path.is_file():
-            raise FileNotFoundError(f"code ROM not found: {path}")
-        roms.append((offset, path.read_bytes(), filename))
+        roms.append((offset, read_rom_file(metadata.archive, filename), filename))
 
     end = 0
     for offset, rom, filename in roms:
@@ -239,12 +257,11 @@ def load_pcm_rom(metadata: GameMetadata) -> bytes:
 
     roms: list[tuple[int, bytes, str]] = []
     for offset, filename in sorted(metadata.pcm_roms):
-        path = ROM_DIR / metadata.archive / filename
-        if not path.is_file():
-            raise FileNotFoundError(f"PCM ROM not found: {path}")
-        raw = path.read_bytes()
+        raw = read_rom_file(metadata.archive, filename)
         if len(raw) % 2:
-            raise ValueError(f"PCM ROM size must be even for 16-bit word swap: {path}")
+            raise ValueError(
+                f"PCM ROM size must be even for 16-bit word swap: {filename!r}"
+            )
         swapped = bytearray(len(raw))
         swapped[0::2] = raw[1::2]
         swapped[1::2] = raw[0::2]

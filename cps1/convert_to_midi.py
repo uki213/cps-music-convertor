@@ -8,6 +8,7 @@ import re
 import struct
 import wave
 import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -117,13 +118,30 @@ def read_game(path: Path) -> Game:
     return Game(archive, tables_offset, version, tuple(roms), tuple(pcm_roms), titles)
 
 
+def read_rom_file(archive: str, filename: str) -> bytes:
+    """Read a single ROM, resolving it from the folder or a ZIP archive."""
+    folder_path = ROM_DIR / archive / filename
+    if folder_path.is_file():
+        return folder_path.read_bytes()
+
+    zip_path = ROM_DIR / f"{archive}.zip"
+    if zip_path.is_file():
+        name = f"{archive}/{filename}".replace("\\", "/")
+        try:
+            with zipfile.ZipFile(zip_path) as archive_file:
+                return archive_file.read(name)
+        except KeyError:
+            pass
+
+    raise FileNotFoundError(
+        f"ROM not found: {folder_path} or {filename!r} in {zip_path}"
+    )
+
+
 def load_rom(game: Game) -> bytes:
     chunks: list[tuple[int, bytes, str]] = []
     for offset, filename in sorted(game.roms):
-        path = ROM_DIR / game.archive / filename
-        if not path.is_file():
-            raise FileNotFoundError(f"code ROM not found: {path}")
-        chunks.append((offset, path.read_bytes(), filename))
+        chunks.append((offset, read_rom_file(game.archive, filename), filename))
     end = 0
     for offset, chunk, filename in chunks:
         if offset < end:
@@ -138,10 +156,7 @@ def load_rom(game: Game) -> bytes:
 def load_pcm_rom(game: Game) -> bytes:
     chunks: list[tuple[int, bytes, str]] = []
     for offset, filename in sorted(game.pcm_roms):
-        path = ROM_DIR / game.archive / filename
-        if not path.is_file():
-            raise FileNotFoundError(f"PCM ROM not found: {path}")
-        chunks.append((offset, path.read_bytes(), filename))
+        chunks.append((offset, read_rom_file(game.archive, filename), filename))
     end = 0
     for offset, chunk, filename in chunks:
         if offset < end:
