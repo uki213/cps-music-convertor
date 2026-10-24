@@ -9,7 +9,7 @@ import struct
 import wave
 import xml.etree.ElementTree as ET
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 
@@ -69,11 +69,9 @@ def read_game(path: Path) -> Game:
     archive = romlist.get("archive", "").strip()
     if not archive or Path(archive).name != archive or archive in (".", ".."):
         raise ValueError(f"invalid ROM archive name in {path}")
-    try:
-        tables_offset = int(romlist.get("tables", ""), 0)
-    except ValueError as error:
-        raise ValueError(f"missing or invalid romlist 'tables' attribute in {path}") from error
-    version = romlist.get("format-version", "")
+    tables_text = (romlist.get("tables") or "").strip()
+    tables_offset = int(tables_text, 0) if tables_text else 0
+    version = (romlist.get("format-version") or "CPS1_V4.25").strip()
     if version != "CPS1_V4.25":
         raise ValueError(f"unsupported CPS-1 format version {version!r}; expected 'CPS1_V4.25'")
 
@@ -110,8 +108,10 @@ def read_game(path: Path) -> Game:
         except ValueError as error:
             raise ValueError(f"invalid song code {code_text!r} in {path}") from error
         title = (element.text or "").strip()
-        if not 0 <= code <= 0xFF or code in titles or not title:
-            raise ValueError(f"duplicate or empty song title for code {code_text!r}")
+        if not 0 <= code <= 0xFF or not title:
+            raise ValueError(f"invalid or empty song title for code {code_text!r}")
+        # Duplicate codes (e.g. a demo loop reusing the same BGM) are allowed;
+        # the last entry in the XML wins.
         titles[code] = title
     if not titles:
         raise ValueError(f"no <title> entries in {path}")
@@ -126,12 +126,15 @@ def read_rom_file(archive: str, filename: str) -> bytes:
 
     zip_path = ROM_DIR / f"{archive}.zip"
     if zip_path.is_file():
-        name = f"{archive}/{filename}".replace("\\", "/")
-        try:
-            with zipfile.ZipFile(zip_path) as archive_file:
-                return archive_file.read(name)
-        except KeyError:
-            pass
+        candidates = (
+            filename.replace("\\", "/"),
+            f"{archive}/{filename}".replace("\\", "/"),
+        )
+        with zipfile.ZipFile(zip_path) as archive_file:
+            names = set(archive_file.namelist())
+            for name in candidates:
+                if name in names:
+                    return archive_file.read(name)
 
     raise FileNotFoundError(
         f"ROM not found: {folder_path} or {filename!r} in {zip_path}"
@@ -166,6 +169,76 @@ def load_pcm_rom(game: Game) -> bytes:
     for offset, chunk, _filename in chunks:
         image[offset : offset + len(chunk)] = chunk
     return bytes(image)
+
+
+def autodetect_tables_offset(data: bytes, titles: dict[int, str]) -> int:
+    """Locate the CPS-1 sound-program tables when the XML omits the offset.
+
+    The header layout is fixed by this tool:
+      +0  sequence count (u8)
+      +2  YM2151 instrument table base (u16 big-endian)
+      +6  sequence pointer table (count * u16 big-endian)
+    A candidate offset is ranked by (resolved song codes, distinct sequence
+    starts, strict first-track pointers).  Requiring distinct and well-formed
+    starts filters out data regions that merely contain words with a clear
+    high bit, which otherwise masquerade as a valid table.
+    """
+    if not titles:
+        raise ValueError("cannot auto-detect the CPS-1 tables offset without song titles")
+    minimum_count = max(titles) + 1
+    limit = min(len(data) - 8, 0x20000)
+    # A real table is one whose pointer entries resolve to a large set of
+    # *distinct, well-formed* sequence starts.  Scoring on resolved entries
+    # alone is not enough: unrelated data regions can contain many words whose
+    # high bit is clear.  We therefore rank candidates on (resolved, distinct,
+    # strict) and require the best candidate to clear a minimum threshold on
+    # all three axes.
+    best_key = None
+    best_offset = -1
+    for offset in range(0x400, limit, 1):
+        sequence_count = data[offset]
+        if sequence_count < minimum_count or sequence_count > 256:
+            continue
+        sequence_table = offset + 6
+        if sequence_table + sequence_count * 2 > len(data):
+            continue
+        # The YM2151 instrument table must fit inside the code ROM.
+        instrument_table = read_u16(data, offset + 2)
+        if instrument_table + VM5_PROGRAM_COUNT * CPS1_FM_INSTRUMENT_SIZE > len(data):
+            continue
+        resolved = 0
+        strict = 0
+        distinct = set()
+        for code in titles:
+            start = read_u16(data, sequence_table + code * 2)
+            if start == 0 or start >= len(data) or data[start] & 0x80:
+                continue
+            resolved += 1
+            distinct.add(start)
+            first_track = read_u16(data, start + 1)
+            if start < first_track < len(data):
+                strict += 1
+        key = (resolved, len(distinct), strict, -offset)
+        if best_key is None or key > best_key:
+            best_key = key
+            best_offset = offset
+    if best_key is None:
+        raise ValueError(
+            "could not auto-detect the CPS-1 tables offset; "
+            "set the 'tables' attribute on <romlist>"
+        )
+    resolved, distinct, strict = best_key[0], best_key[1], best_key[2]
+    # strict is only a tie-breaker: many legitimate codes (PCM / voice-only)
+    # resolve to valid starts but have no FM first-track, so requiring a high
+    # strict count would reject real tables.
+    threshold = max(4, len(titles) // 2)
+    if resolved < threshold or distinct < threshold:
+        raise ValueError(
+            f"could not auto-detect a confident CPS-1 tables offset "
+            f"(best: resolved={resolved}, distinct={distinct}, strict={strict}); "
+            "set the 'tables' attribute on <romlist>"
+        )
+    return best_offset
 
 
 def decode_msm6295(data: bytes) -> bytes:
@@ -781,6 +854,10 @@ def convert_game(
 ) -> None:
     game = read_game(xml_path)
     data = load_rom(game)
+    if game.tables_offset == 0:
+        detected = autodetect_tables_offset(data, game.titles)
+        game = replace(game, tables_offset=detected)
+        print(f"Auto-detected CPS-1 tables offset 0x{detected:x}")
     voice_path = vm5_output or BASE_DIR / "voices" / f"{game.archive}.vm5"
     program_count = write_vm5_library(data, game.tables_offset, voice_path)
     print(f"Wrote {program_count} YM2151 programs to {voice_path}")

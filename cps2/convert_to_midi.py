@@ -222,12 +222,15 @@ def read_rom_file(archive: str, filename: str) -> bytes:
 
     zip_path = ROM_DIR / f"{archive}.zip"
     if zip_path.is_file():
-        name = f"{archive}/{filename}".replace("\\", "/")
-        try:
-            with zipfile.ZipFile(zip_path) as archive_file:
-                return archive_file.read(name)
-        except KeyError:
-            pass
+        candidates = (
+            filename.replace("\\", "/"),
+            f"{archive}/{filename}".replace("\\", "/"),
+        )
+        with zipfile.ZipFile(zip_path) as archive_file:
+            names = set(archive_file.namelist())
+            for name in candidates:
+                if name in names:
+                    return archive_file.read(name)
 
     raise FileNotFoundError(
         f"ROM not found: {folder_path} or {filename!r} in {zip_path}"
