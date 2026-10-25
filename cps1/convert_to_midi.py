@@ -72,8 +72,11 @@ def read_game(path: Path) -> Game:
     tables_text = (romlist.get("tables") or "").strip()
     tables_offset = int(tables_text, 0) if tables_text else 0
     version = (romlist.get("format-version") or "CPS1_V4.25").strip()
-    if version not in ("CPS1_V4.25", "CPS1_V2.00"):
-        raise ValueError(f"unsupported CPS-1 format version {version!r}; expected 'CPS1_V4.25' or 'CPS1_V2.00'")
+    if version not in ("CPS1_V4.25", "CPS1_V3.50", "CPS1_V2.00"):
+        raise ValueError(
+            f"unsupported CPS-1 format version {version!r}; expected "
+            "'CPS1_V4.25', 'CPS1_V3.50' or 'CPS1_V2.00'"
+        )
     
     # For now, we treat both versions the same way since they're likely to be
     # compatible at the core conversion level, but can be extended for specific differences
@@ -188,10 +191,11 @@ def autodetect_tables_candidates(
     limit = min(len(data) - 8, 0x20000)
     scored: list[tuple[tuple[int, int, int, int], int]] = []
     for offset in range(0x400, limit, 1):
-        if version == "CPS1_V2.00":
-            sequence_table = offset + 3
-            record_size = 32
-            pointer_offset = 1
+        if version in ("CPS1_V2.00", "CPS1_V3.50"):
+            # V2.00 header: [count][FM table ptr]; V3.50: [count][masterVol][FM table ptr].
+            sequence_table = offset + (3 if version == "CPS1_V2.00" else 4)
+            record_size = 32 if version == "CPS1_V2.00" else CPS1_FM_INSTRUMENT_SIZE
+            pointer_offset = 1 if version == "CPS1_V2.00" else 2
         else:
             sequence_table = offset + 6
             record_size = CPS1_FM_INSTRUMENT_SIZE
@@ -199,10 +203,10 @@ def autodetect_tables_candidates(
         sequence_count = data[offset]
         if sequence_count > 256:
             continue
-        # V2.00's count byte records used slots, not the highest code
-        # (e.g. Final Fight: count 0xC3 but code 0xF0), so it may be
+        # V2.00/V3.50 count bytes record used slots, not the highest code
+        # (e.g. Final Fight: count 0xC3 but code 0xF0), so they may be
         # smaller than max(titles) + 1; V4.25 count equals 255 in practice.
-        if version != "CPS1_V2.00" and sequence_count < minimum_count:
+        if version not in ("CPS1_V2.00", "CPS1_V3.50") and sequence_count < minimum_count:
             continue
         if sequence_table + sequence_count * 2 > len(data):
             continue
@@ -322,8 +326,8 @@ def build_pcm_notes_by_program(
         sample_index: PCM_NOTE_BASE + index
         for index, sample_index in enumerate(sorted(samples))
     }
-    if version == "CPS1_V2.00":
-        # V2.00 has no PCM instrument table: the mapping is identity
+    if version in ("CPS1_V2.00", "CPS1_V3.50"):
+        # V2.00/V3.50 have no PCM instrument table: the mapping is identity
         # (program N selects sample N-1), per VGMTrans CPS1Instr.cpp.
         notes_by_program: dict[int, int] = {}
         for program in range(1, VM5_PROGRAM_COUNT + 1):
@@ -435,6 +439,12 @@ def load_cps1_instruments(code_rom: bytes, tables_offset: int, version: str) -> 
             raise ValueError(f"CPS-1 tables header outside ROM at 0x{tables_offset:x}")
         instrument_table = read_u16(code_rom, tables_offset + 1)
         record_size = 32
+    elif version == "CPS1_V3.50":
+        # V3.50: 4-byte header ([count][masterVol][FM table ptr (2B BE)]), 40-byte records.
+        if tables_offset + 4 > len(code_rom):
+            raise ValueError(f"CPS-1 tables header outside ROM at 0x{tables_offset:x}")
+        instrument_table = read_u16(code_rom, tables_offset + 2)
+        record_size = CPS1_FM_INSTRUMENT_SIZE
     else:
         if tables_offset + 6 > len(code_rom):
             raise ValueError(f"CPS-1 tables header outside ROM at 0x{tables_offset:x}")
@@ -781,7 +791,7 @@ def decode_track(
                 raw = value >> 2
                 pitch_bend = round((raw * 100 / 63) - (100 if raw >= 32 else 0))
                 if not sample_channel:
-                    if held_note is not None:
+                    if held_note is not None and tied_pitch is not None:
                         emit_bend(tick, (tied_pitch - held_note) + pitch_bend / 100)
                     else:
                         emit_bend(tick, pitch_bend / 100)
@@ -864,6 +874,12 @@ def decode_sequence(
 ) -> tuple[list[Track], list[tuple[int, int]]]:
     if start >= len(data) or data[start] & 0x80:
         raise ValueError(f"invalid sequence header at 0x{start:x}")
+    # Some entries are placeholders: a valid flag byte but all 12 track
+    # pointers zero (e.g. Final Fight BGM 3, code 0x42). Treat them as an
+    # empty sequence instead of a failure, matching VGMTrans behavior.
+    if all(read_u16(data, start + 1 + index * 2) == 0 for index in range(12)):
+        print(f"  warning: {title}: all track pointers empty (skipped)")
+        return [], []
     tracks: list[Track] = []
     pcm_track = Track("PCM (Channel 10)", 9)
     has_pcm_tracks = False
@@ -878,6 +894,17 @@ def decode_sequence(
             print(
                 f"  warning: {title}: invalid track {index + 1} pointer "
                 f"0x{pointer:x}; skipping track"
+            )
+            continue
+        # Track pointers that fall in the 0xFF padding beyond the actual
+        # code content (e.g. Final Fight Phone 2 track 0 @ 0x9108 where the
+        # real content ends at 0x07FF) would otherwise decode as thousands
+        # of spurious note-ons and balloon the MIDI output to several MB.
+        # Detect this by checking whether the first 16 bytes are all 0xFF.
+        if all(b == 0xFF for b in data[pointer : pointer + 16]):
+            print(
+                f"  warning: {title}: track {index + 1} pointer 0x{pointer:x} "
+                f"in 0xFF padding; skipping track"
             )
             continue
         try:
@@ -907,7 +934,7 @@ def decode_sequence(
     if has_pcm_tracks:
         tracks.append(pcm_track)
     if not tracks:
-        raise ValueError(f"sequence {title!r} has no tracks")
+        print(f"  warning: {title}: no track decoded any events (skipped)")
     return tracks, tempo_events
 
 
@@ -950,7 +977,8 @@ def convert_game(
     last_error: Exception | None = None
     for tables in candidates:
         is_v200 = game.version == "CPS1_V2.00"
-        header_size = 3 if is_v200 else 6
+        is_v350 = game.version == "CPS1_V3.50"
+        header_size = 3 if is_v200 else 4 if is_v350 else 6
         if tables + header_size > len(data):
             last_error = ValueError(f"CPS-1 tables header outside ROM at 0x{tables:x}")
             continue
@@ -1001,12 +1029,11 @@ def convert_game(
             print(f"Candidate 0x{tables:x} failed: {failure}")
             last_error = ValueError(failure)
             continue
-        # A genuine tables offset must explain every title in the XML; a
-        # candidate that decodes only a few is a false positive.
-        if len(decoded) < min(len(game.titles), table_codes):
-            last_error = ValueError(
-                f"0x{tables:x} only explained {len(decoded)} of {len(game.titles)} titles"
-            )
+        # A genuine tables offset must explain at least one title; the XML
+        # legitimately contains PCM one-shots (flag bit 7) and empty
+        # placeholder entries that do not produce MIDI output.
+        if not decoded:
+            last_error = ValueError(f"0x{tables:x} explained no titles")
             print(f"Candidate 0x{tables:x} failed: {last_error}")
             continue
 
