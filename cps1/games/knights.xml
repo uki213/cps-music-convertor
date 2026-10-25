@@ -5,7 +5,7 @@
 		<options>
 			<option name="pcm_mix" value="0x3c"/>
 		</options>
-		<romlist archive="knights">
+		<romlist archive="knights" format-version="CPS1_V4.25" tables="0x1100">
 			<rom type="code" offset="0x00000">kr_09.11a</rom>
 			<rom type="pcm" offset="0x00000">kr_18.11c</rom>
 			<rom type="pcm" offset="0x20000">kr_19.12c</rom>

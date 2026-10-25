@@ -70,7 +70,17 @@ def read_game(path: Path) -> Game:
     if not archive or Path(archive).name != archive or archive in (".", ".."):
         raise ValueError(f"invalid ROM archive name in {path}")
     tables_text = (romlist.get("tables") or "").strip()
-    tables_offset = int(tables_text, 0) if tables_text else 0
+    if not tables_text:
+        raise ValueError(
+            f"missing required 'tables' attribute on <romlist> in {path}; "
+            "specify the CPS-1 sound-program tables offset (e.g. tables=\"0x1000\")"
+        )
+    try:
+        tables_offset = int(tables_text, 0)
+    except ValueError as error:
+        raise ValueError(
+            f"invalid 'tables' attribute {tables_text!r} in {path}"
+        ) from error
     version = (romlist.get("format-version") or "CPS1_V4.25").strip()
     if version not in ("CPS1_V4.25", "CPS1_V3.50", "CPS1_V2.00"):
         raise ValueError(
@@ -175,98 +185,6 @@ def load_pcm_rom(game: Game) -> bytes:
     for offset, chunk, _filename in chunks:
         image[offset : offset + len(chunk)] = chunk
     return bytes(image)
-
-
-def autodetect_tables_candidates(
-    data: bytes, titles: dict[int, str], version: str, max_candidates: int = 10
-) -> list[int]:
-    """Locate candidate CPS-1 sound-program table offsets when the XML omits the offset.
-
-    Returns up to *max_candidates* offsets sorted by score (best first).
-    The caller should try each candidate until sequence decoding succeeds.
-    """
-    if not titles:
-        raise ValueError("cannot auto-detect the CPS-1 tables offset without song titles")
-    minimum_count = max(titles) + 1
-    limit = min(len(data) - 8, 0x20000)
-    scored: list[tuple[tuple[int, int, int, int], int]] = []
-    for offset in range(0x400, limit, 1):
-        if version in ("CPS1_V2.00", "CPS1_V3.50"):
-            # V2.00 header: [count][FM table ptr]; V3.50: [count][masterVol][FM table ptr].
-            sequence_table = offset + (3 if version == "CPS1_V2.00" else 4)
-            record_size = 32 if version == "CPS1_V2.00" else CPS1_FM_INSTRUMENT_SIZE
-            pointer_offset = 1 if version == "CPS1_V2.00" else 2
-        else:
-            sequence_table = offset + 6
-            record_size = CPS1_FM_INSTRUMENT_SIZE
-            pointer_offset = 2
-        sequence_count = data[offset]
-        if sequence_count > 256:
-            continue
-        # V2.00/V3.50 count bytes record used slots, not the highest code
-        # (e.g. Final Fight: count 0xC3 but code 0xF0), so they may be
-        # smaller than max(titles) + 1; V4.25 count equals 255 in practice.
-        if version not in ("CPS1_V2.00", "CPS1_V3.50") and sequence_count < minimum_count:
-            continue
-        if sequence_table + sequence_count * 2 > len(data):
-            continue
-        if offset + pointer_offset + 2 > len(data):
-            continue
-        instrument_table = read_u16(data, offset + pointer_offset)
-        if instrument_table + VM5_PROGRAM_COUNT * record_size > len(data):
-            continue
-        # The FM instrument table must point at real program data, not the
-        # 0xFF/0x00 padding that surrounds the actual code content. A pointer
-        # into padding still passes the bounds check above but would produce
-        # garbage voices and, more importantly, usually sits at a fake tables
-        # offset whose sequence table also decodes to spurious notes.
-        if offset + pointer_offset + 2 <= len(data):
-            opm_window = data[instrument_table : instrument_table + 40]
-            if opm_window and len(set(opm_window)) == 1:
-                continue
-        resolved = 0
-        strict = 0
-        distinct = set()
-        for code in titles:
-            if sequence_table + code * 2 + 2 > len(data):
-                resolved = -1
-                break
-            start = read_u16(data, sequence_table + code * 2)
-            if start == 0 or start >= len(data) or data[start] & 0x80:
-                continue
-            resolved += 1
-            distinct.add(start)
-            if start + 3 > len(data):
-                continue
-            first_track = read_u16(data, start + 1)
-            if 0 < first_track < len(data) and not (data[first_track] & 0x80):
-                strict += 1
-        if resolved < 0:
-            continue
-        # A genuine table has strict == resolved (every pointer is valid).
-        # False positives always have strict < resolved.
-        perfect = 1 if strict == resolved and strict > 0 else 0
-        scored.append(((perfect * 100000 + strict, resolved, len(distinct), -offset), offset))
-    if not scored:
-        raise ValueError(
-            "could not auto-detect the CPS-1 tables offset; "
-            "set the 'tables' attribute on <romlist>"
-        )
-    scored.sort(key=lambda item: item[0], reverse=True)
-    minimum_strict = max(4, min(len(titles), 255) // 4)
-    # Prefer offsets where every resolved pointer is valid (strict == resolved).
-    perfect = [offset for key, offset in scored if key[0] >= 100000 and (key[0] % 100000) >= minimum_strict]
-    candidates = perfect if perfect else [
-        offset for key, offset in scored if key[0] >= minimum_strict
-    ]
-    if not candidates:
-        best_key = scored[0][0]
-        raise ValueError(
-            "could not auto-detect a confident CPS-1 tables offset "
-            f"(best strict={best_key[0] % 100000}, resolved={best_key[1]}); "
-            "set the 'tables' attribute on <romlist>"
-        )
-    return candidates[:max_candidates]
 
 
 def decode_msm6295(data: bytes) -> bytes:
@@ -972,13 +890,7 @@ def convert_game(
     game = read_game(xml_path)
     data = load_rom(game)
 
-    # Collect candidate tables offsets (best first).
-    if game.tables_offset != 0:
-        candidates: list[int] = [game.tables_offset]
-    else:
-        candidates = autodetect_tables_candidates(data, game.titles, game.version)
-        print(f"Auto-detected {len(candidates)} CPS-1 tables offset candidate(s): "
-              + ", ".join(f"0x{c:x}" for c in candidates))
+    tables = game.tables_offset
 
     # PCM sample decoding and WAV extraction are independent of the tables offset.
     pcm_rom = load_pcm_rom(game)
@@ -992,100 +904,84 @@ def convert_game(
     destination = output_dir or MIDI_DIR / game.archive
     destination.mkdir(parents=True, exist_ok=True)
 
-    last_error: Exception | None = None
-    for tables in candidates:
-        is_v200 = game.version == "CPS1_V2.00"
-        is_v350 = game.version == "CPS1_V3.50"
-        header_size = 3 if is_v200 else 4 if is_v350 else 6
-        if tables + header_size > len(data):
-            last_error = ValueError(f"CPS-1 tables header outside ROM at 0x{tables:x}")
-            continue
-        sequence_count = data[tables]
-        sequence_table = tables + header_size
-        # The count byte only records how many of the 256 table slots are
-        # used, not the highest code (e.g. Final Fight has code 0xF0 with
-        # count 0xC3). Size the table by the highest code we actually need.
-        table_codes = min(256, max(game.titles, default=0) + 1)
-        if sequence_table + table_codes * 2 > len(data):
-            last_error = ValueError(f"CPS-1 sequence pointer table at 0x{tables:x} extends past the code ROM")
-            continue
+    is_v200 = game.version == "CPS1_V2.00"
+    is_v350 = game.version == "CPS1_V3.50"
+    header_size = 3 if is_v200 else 4 if is_v350 else 6
+    if tables + header_size > len(data):
+        raise ValueError(f"CPS-1 tables header outside ROM at 0x{tables:x}")
+    sequence_table = tables + header_size
+    # The count byte only records how many of the 256 table slots are
+    # used, not the highest code (e.g. Final Fight has code 0xF0 with
+    # count 0xC3). Size the table by the highest code we actually need.
+    table_codes = min(256, max(game.titles, default=0) + 1)
+    if sequence_table + table_codes * 2 > len(data):
+        raise ValueError(f"CPS-1 sequence pointer table at 0x{tables:x} extends past the code ROM")
 
-        # Build PCM program→note mapping for this candidate.
+    # Build PCM program→note mapping.
+    try:
+        pcm_notes_by_program = build_pcm_notes_by_program(
+            data, tables, pcm_samples, game.version
+        )
+    except ValueError:
+        pcm_notes_by_program = {}
+
+    # Attempt to decode every title.
+    decoded: list[tuple[int, str, list[Track], list[tuple[int, int]]]] = []
+    failure: str | None = None
+    for code, title in game.titles.items():
+        if code >= table_codes:
+            failure = f"song code 0x{code:02x} is outside the sequence table (0x{table_codes:02x})"
+            break
+        sequence_start = read_u16(data, sequence_table + code * 2)
+        if sequence_start == 0:
+            continue
+        if sequence_start >= len(data) or data[sequence_start] & 0x80:
+            continue
         try:
-            pcm_notes_by_program = build_pcm_notes_by_program(
-                data, tables, pcm_samples, game.version
+            tracks, tempos = decode_sequence(data, sequence_start, title, pcm_notes_by_program)
+        except ValueError as exc:
+            failure = f"0x{code:02x} {title}: {exc}"
+            break
+        if not any(track.note_count for track in tracks):
+            print(
+                f"  warning: 0x{code:02x} {title}: decoded sequence "
+                f"contains no notes (skipped)"
             )
-        except ValueError:
-            pcm_notes_by_program = {}
-
-        # Attempt to decode every title with this candidate offset.
-        decoded: list[tuple[int, str, list[Track], list[tuple[int, int]]]] = []
-        failure: str | None = None
-        for code, title in game.titles.items():
-            if code >= table_codes:
-                failure = f"song code 0x{code:02x} is outside the sequence table (0x{table_codes:02x})"
-                break
-            sequence_start = read_u16(data, sequence_table + code * 2)
-            if sequence_start == 0:
-                continue
-            if sequence_start >= len(data) or data[sequence_start] & 0x80:
-                continue
-            try:
-                tracks, tempos = decode_sequence(data, sequence_start, title, pcm_notes_by_program)
-            except ValueError as exc:
-                failure = f"0x{code:02x} {title}: {exc}"
-                break
-            if not any(track.note_count for track in tracks):
-                print(
-                    f"  warning: 0x{code:02x} {title}: decoded sequence "
-                    f"contains no notes (skipped)"
-                )
-                continue
-            decoded.append((code, title, tracks, tempos))
-
-        if failure is not None:
-            print(f"Candidate 0x{tables:x} failed: {failure}")
-            last_error = ValueError(failure)
             continue
-        # A genuine tables offset must explain at least one title; the XML
-        # legitimately contains PCM one-shots (flag bit 7) and empty
-        # placeholder entries that do not produce MIDI output.
-        if not decoded:
-            last_error = ValueError(f"0x{tables:x} explained no titles")
-            print(f"Candidate 0x{tables:x} failed: {last_error}")
-            continue
+        decoded.append((code, title, tracks, tempos))
 
-        # All sequences decoded successfully — commit this candidate.
-        print(f"Using CPS-1 tables offset 0x{tables:x} ({len(decoded)} sequences)")
-        voice_path = vm5_output or BASE_DIR / "voices" / f"{game.archive}.vm5"
-        try:
-            program_count = write_vm5_library(data, tables, voice_path, game.version)
-            print(f"Wrote {program_count} YM2151 programs to {voice_path}")
-        except ValueError as exc:
-            print(f"Skipping VM5 voice export: {exc}")
-        muc_path = muc_output or BASE_DIR / "voices" / f"{game.archive}.muc"
-        try:
-            muc_count = write_mucom_library(data, tables, game.archive, muc_path, game.version)
-            print(f"Wrote {muc_count} MUCOM YM2151 voice definitions to {muc_path}")
-        except ValueError as exc:
-            print(f"Skipping MUCOM voice export: {exc}")
-        opm_path = opm_output or BASE_DIR / "voices" / f"{game.archive}.opm"
-        try:
-            opm_count = write_opm_library(data, tables, game.archive, opm_path, game.version)
-            print(f"Wrote {opm_count} YM2151 OPM voice definitions to {opm_path}")
-        except ValueError as exc:
-            print(f"Skipping OPM voice export: {exc}")
+    if failure is not None:
+        raise ValueError(failure)
+    # The XML legitimately contains PCM one-shots (flag bit 7) and empty
+    # placeholder entries that do not produce MIDI output.
+    if not decoded:
+        raise ValueError(f"0x{tables:x} explained no titles")
 
-        for code, title, tracks, tempos in decoded:
-            midi = make_midi(tracks, tempos)
-            output = destination / f"{code:02x}_{safe_filename(title)}.mid"
-            output.write_bytes(midi)
-            print(f"{output.name}: {len(tracks)} tracks, {sum(t.note_count for t in tracks)} notes")
-        return
+    print(f"Using CPS-1 tables offset 0x{tables:x} ({len(decoded)} sequences)")
+    voice_path = vm5_output or BASE_DIR / "voices" / f"{game.archive}.vm5"
+    try:
+        program_count = write_vm5_library(data, tables, voice_path, game.version)
+        print(f"Wrote {program_count} YM2151 programs to {voice_path}")
+    except ValueError as exc:
+        print(f"Skipping VM5 voice export: {exc}")
+    muc_path = muc_output or BASE_DIR / "voices" / f"{game.archive}.muc"
+    try:
+        muc_count = write_mucom_library(data, tables, game.archive, muc_path, game.version)
+        print(f"Wrote {muc_count} MUCOM YM2151 voice definitions to {muc_path}")
+    except ValueError as exc:
+        print(f"Skipping MUCOM voice export: {exc}")
+    opm_path = opm_output or BASE_DIR / "voices" / f"{game.archive}.opm"
+    try:
+        opm_count = write_opm_library(data, tables, game.archive, opm_path, game.version)
+        print(f"Wrote {opm_count} YM2151 OPM voice definitions to {opm_path}")
+    except ValueError as exc:
+        print(f"Skipping OPM voice export: {exc}")
 
-    raise ValueError(
-        f"no CPS-1 tables offset candidate produced a valid sequence set: {last_error}"
-    )
+    for code, title, tracks, tempos in decoded:
+        midi = make_midi(tracks, tempos)
+        output = destination / f"{code:02x}_{safe_filename(title)}.mid"
+        output.write_bytes(midi)
+        print(f"{output.name}: {len(tracks)} tracks, {sum(t.note_count for t in tracks)} notes")
 
 
 def main() -> None:
