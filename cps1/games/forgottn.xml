@@ -1,0 +1,38 @@
+<game>
+    <name>[CPS-1] Forgotten Worlds (フォゴットンワールド) (YM2151+MSM6295)</name>
+    <driver type="cps1">capcom</driver>
+    <driveralias type="ARCADE">Capcom</driveralias>
+    <options>
+        <option name="pcm_mix" value="0x3c" />
+    </options>
+    <romlist archive="forgottn">
+        <rom type="code" offset="0x00000">lw_00.13c</rom>
+        <rom type="pcm" offset="0x00000">lw-03u.12e</rom>
+        <rom type="pcm" offset="0x20000">lw-04u.13e</rom>
+    </romlist>
+    <titlelist>
+        <title code="0xf0">Stop the Music</title>
+        <title code="0x00">Credit (クレジット)</title>
+        <title code="0x01">Opening</title>
+        <title code="0x02">Round 1 BGM (Dust World #1)</title>
+        <title code="0x03">Round 2 BGM (Dust World #2)</title>
+        <title code="0x04">Round 3 BGM (Dust World #3)</title>
+        <title code="0x05">Round 4 BGM (Pyramid World #1)</title>
+        <title code="0x06">Round 5 BGM (Pyramid World #2)</title>
+        <title code="0x07">Round 6 BGM (Pyramid World #3)</title>
+        <title code="0x12">Shoppin'</title>
+        <title code="0x08">Round 7 BGM (Ethereous World #1)</title>
+        <title code="0x09">Round 8 BGM (Ethereous World #2)</title>
+        <title code="0x0a">Round 9 BGM (Ethereous World #3)</title>
+        <title code="0x0b">Mid Boss A &lt;Outside&gt;</title>
+        <title code="0x0c">Mid Boss B &lt;Inside&gt;</title>
+        <title code="0x0d">Boss</title>
+        <title code="0x0e">Last Round Boss (Bios)</title>
+        <title code="0x0f">Round Clear</title>
+        <title code="0x14">Ending</title>
+        <title code="0x10">Staff Roll</title>
+        <title code="0x13">Game Over</title>
+        <title code="0x15">Not on CD 1 (未使用 1)</title>
+        <title code="0x16">Not on CD 2 (未使用 2)</title>
+    </titlelist>
+</game>

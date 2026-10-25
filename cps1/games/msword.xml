@@ -1,0 +1,41 @@
+<game>
+		<name>[CPS-1] Magic Sword: Heroic Fantasy (マジックソード) (YM2151+MSM6295)</name>
+		<driver type="cps1">capcom</driver>
+		<driveralias type="ARCADE">Capcom</driveralias>
+		<options>
+			<option name="pcm_mix" value="0x3c"/>
+		</options>
+		<romlist archive="msword">
+			<rom type="code" offset="0x00000">ms_09.12b</rom>
+			<rom type="pcm" offset="0x00000">ms_18.11c</rom>
+			<rom type="pcm" offset="0x20000">ms_19.12c</rom>
+		</romlist>
+		<titlelist>
+			<title code="0x00">Opening Demo</title>
+			<title code="0x1c">Credit</title>
+			<title code="0x01">Departure (Start Point Select)</title>
+			<title code="0x02">Road to the Tower (Round 1)</title>
+			<title code="0x03">The Dragon's Tower 1 (Round 2)</title>
+			<title code="0x0f">The Dragon's Tower 2 (Scroll A Group)</title>
+			<title code="0x0d">The Flame Floor (Fire Stage)</title>
+			<title code="0x16">Boss Demo</title>
+			<title code="0x08">Red Dragon (Round 2 Boss)</title>
+			<title code="0x17">Round Clear</title>
+			<title code="0x11">Bonus</title>
+			<title code="0x04">The Dragon's Tower 3 (Round 3)</title>
+			<title code="0x0e">The Water Floor (Water Stage)</title>
+			<title code="0x09">Mage Quimyra (Round 3 Boss)</title>
+			<title code="0x05">The Dragon's Tower 4 (Round 4)</title>
+			<title code="0x0a">King Crawler (Round 4 Boss)</title>
+			<title code="0x06">The Dragon's Tower 5 (Round 5)</title>
+			<title code="0x0b">Double Dragon (Round 5 Boss)</title>
+			<title code="0x07">The Dragon's Tower 6 (Round 6)</title>
+			<title code="0x10">The Final Floor (50th Floor)</title>
+			<title code="0x0c">Drokmar's End 1</title>
+			<title code="0x1b">Final Round Clear</title>
+			<title code="0x12">End Demo (Safe Return)</title>
+			<title code="0x14">Game Over</title>
+			<title code="0x13">Ranking Display</title>
+			<title code="0x15">Unused</title>
+		</titlelist>
+	</game>

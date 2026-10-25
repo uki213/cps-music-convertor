@@ -1,0 +1,33 @@
+<game>
+    <name>[CPS-1] Mercs (戦場の狼II) (YM2151+MSM6295)</name>
+    <driver type="cps1">capcom</driver>
+    <driveralias type="ARCADE">Capcom</driveralias>
+    <options>
+        <option name="pcm_mix" value="0x3c" />
+    </options>
+    <romlist archive="mercs" format-version="CPS1_V2.00" tables="0x0a8c">
+        <rom type="code" offset="0x00000">so2_09.12b</rom>
+        <rom type="pcm" offset="0x00000">so2_18.11c</rom>
+        <rom type="pcm" offset="0x20000">so2_19.12c</rom>
+    </romlist>
+    <titlelist>
+        <title code="0x00">Credit</title>
+        <title code="0x01">Introduction</title>
+        <title code="0x02">Mission 1 (Initiate Operation)</title>
+        <title code="0x08">Boss 1, 6</title>
+        <title code="0x0e">Round Clear</title>
+        <title code="0x03">Mission 2 (Break Enemy Tank Line)</title>
+        <title code="0x09">Boss 2, 4</title>
+        <title code="0x04">Mission 3 (Neutralize the Special Attack Unit)</title>
+        <title code="0x0f">Boss 3, Final Mission</title>
+        <title code="0x05">Mission 4 (Penetrate Mountain)</title>
+        <title code="0x06">Mission 5 (Destroy Enemy Supply Line)</title>
+        <title code="0x10">Boss 5</title>
+        <title code="0x07">Mission 6 (Attack R Country's Air Base)</title>
+        <title code="0x11">Ending</title>
+        <title code="0x0b">Credits Roll</title>
+        <title code="0x0a">Ranking</title>
+        <title code="0x0c">Ranking Display</title>
+        <title code="0x0d">Game Over</title>
+    </titlelist>
+</game>

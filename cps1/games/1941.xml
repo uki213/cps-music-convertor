@@ -1,0 +1,43 @@
+<game>
+    <name>[CPS-1] 1941 (1941 -カウンターアタック-) (YM2151+MSM6295)</name>
+    <driver type="cps1">capcom</driver>
+    <driveralias type="ARCADE">Capcom</driveralias>
+    <options>
+        <option name="pcm_mix" value="0x3c" />
+    </options>
+    <romlist archive="1941" format-version="CPS1_V2.00" tables="0x06ee">
+        <rom type="code" offset="0x00000">41_9.12b</rom>
+        <rom type="pcm" offset="0x00000">41_18.11c</rom>
+        <rom type="pcm" offset="0x20000">41_19.12c</rom>
+    </romlist>
+    <titlelist>
+        <title code="0x96">Credit</title>
+        <title code="0x4a">Opening</title>
+        <title code="0x40">Stage 1</title>
+        <title code="0x42">Boss 1</title>
+        <title code="0x43">Stage Clear</title>
+        <title code="0x41">Stage 2</title>
+        <title code="0x48">Boss 2</title>
+        <title code="0x44">Stage 3</title>
+        <title code="0x49">Boss 3</title>
+        <title code="0x45">Stage 4</title>
+        <title code="0x4d">Boss 4</title>
+        <title code="0x46">Stage 5</title>
+        <title code="0x58">Boss 5</title>
+        <title code="0x47">Stage 6-A</title>
+        <title code="0x42">Mid Boss A</title>
+        <title code="0x4f">Stage 6-B</title>
+        <title code="0x51">Stage 6-C</title>
+        <title code="0x4e">Mid Boss B</title>
+        <title code="0x50">Stage 6-D</title>
+        <title code="0x52">Boss 6-A</title>
+        <title code="0x53">Boss 6-B (Last Boss)</title>
+        <title code="0x56">Last Stage Clear</title>
+        <title code="0x4b">Ending</title>
+        <title code="0x57">Credits Roll</title>
+        <title code="0x55">Ranking</title>
+        <title code="0x54">Continue</title>
+        <title code="0x4c">Game Over</title>
+        <title code="0x59">Unused</title>
+    </titlelist>
+</game>
