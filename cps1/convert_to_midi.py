@@ -210,21 +210,39 @@ def autodetect_tables_candidates(
             continue
         if sequence_table + sequence_count * 2 > len(data):
             continue
+        if offset + pointer_offset + 2 > len(data):
+            continue
         instrument_table = read_u16(data, offset + pointer_offset)
         if instrument_table + VM5_PROGRAM_COUNT * record_size > len(data):
             continue
+        # The FM instrument table must point at real program data, not the
+        # 0xFF/0x00 padding that surrounds the actual code content. A pointer
+        # into padding still passes the bounds check above but would produce
+        # garbage voices and, more importantly, usually sits at a fake tables
+        # offset whose sequence table also decodes to spurious notes.
+        if offset + pointer_offset + 2 <= len(data):
+            opm_window = data[instrument_table : instrument_table + 40]
+            if opm_window and len(set(opm_window)) == 1:
+                continue
         resolved = 0
         strict = 0
         distinct = set()
         for code in titles:
+            if sequence_table + code * 2 + 2 > len(data):
+                resolved = -1
+                break
             start = read_u16(data, sequence_table + code * 2)
             if start == 0 or start >= len(data) or data[start] & 0x80:
                 continue
             resolved += 1
             distinct.add(start)
+            if start + 3 > len(data):
+                continue
             first_track = read_u16(data, start + 1)
             if 0 < first_track < len(data) and not (data[first_track] & 0x80):
                 strict += 1
+        if resolved < 0:
+            continue
         # A genuine table has strict == resolved (every pointer is valid).
         # False positives always have strict < resolved.
         perfect = 1 if strict == resolved and strict > 0 else 0
