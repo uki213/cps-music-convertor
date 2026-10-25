@@ -3,6 +3,10 @@
 ゲーム情報XMLに記載された曲コードとROMを読み込み、Standard MIDI Format 0の
 ファイルを生成します。現在の変換器は、CPS-1 V4.25形式およびV2.00形式のシーケンスを対象とします。
 
+> サウンドROMのバイナリ仕様 (テーブルヘッダ / シーケンステーブル /
+> シーケンスヘッダ / トラックのopcode / ループ機構 / MSM6295) の詳細解析は
+> **[FORMAT.md](./FORMAT.md)** を参照してください。
+
 - ROMファイル: `roms/<archive>/`
 - ゲーム情報XML: `games/`
 - 生成するMIDIファイル: `midi/<archive>/`
