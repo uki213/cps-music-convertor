@@ -696,14 +696,24 @@ def decode_track(
                         emit_bend(tick, (key - held_note) + pitch_bend / 100)
                         tied_pitch = key
                 else:
-                    if held_note is not None:
-                        note_off(tick, held_note)
+                    if held_note is not None and key == held_note:
+                        # Tie ended on the same pitch: the held note is still
+                        # sounding (ON without a matching OFF), so just release
+                        # it after this note's duration — do not retrigger with a
+                        # new ON (VGMTrans: addTime(absDur) + NoteOff).
+                        note_off(tick + duration, held_note, 0 if duration else 3)
+                        emit_bend(tick, 0)
                         held_note = None
                         tied_pitch = None
-                        emit_bend(tick, 0)
-                    track.add(tick, 2, bytes((0x90 | channel, key, NOTE_VELOCITY)))
-                    track.note_count += 1
-                    note_off(tick + duration, key, 0 if duration else 3)
+                    else:
+                        if held_note is not None:
+                            note_off(tick, held_note)
+                            emit_bend(tick, 0)
+                        held_note = None
+                        tied_pitch = None
+                        track.add(tick, 2, bytes((0x90 | channel, key, NOTE_VELOCITY)))
+                        track.note_count += 1
+                        note_off(tick + duration, key, 0 if duration else 3)
             tick += delta
             continue
 
