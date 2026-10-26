@@ -623,6 +623,7 @@ def decode_track(
     track_index: int,
     name: str,
     pcm_notes_by_program: dict[int, int],
+    stop_tick: int | None = None,
 ) -> tuple[Track, list[tuple[int, int]]]:
     channel = track_index % 16
     track = Track(name, channel)
@@ -651,6 +652,11 @@ def decode_track(
         track.add(at, priority, bytes((0x80 | channel, key, 0)))
 
     for _ in range(MAX_STEPS):
+        if stop_tick is not None and tick >= stop_tick:
+            # This track was stretched to fill the whole sequence (an
+            # infinite-loop track). Stop once the sequence length is reached,
+            # mirroring VGMTrans deactivating forever-loop tracks at stopTime.
+            break
         if pos >= len(data):
             break
         command_offset = pos
@@ -814,14 +820,20 @@ def decode_track(
             else:
                 pos += 3
         elif status == 0x16:
-            if command_offset in forever_offsets:
-                break
-            forever_offsets.add(command_offset)
             if pos + 2 > len(data):
                 break
-            pos = read_u16(data, pos)
-            if pos == 0:
+            target = read_u16(data, pos)
+            if target == 0:
                 break
+            if stop_tick is None:
+                # Measurement pass (VGMTrans FIND_DELTA_LENGTH): record the
+                # loop length but do not repeat it here.
+                if command_offset in forever_offsets:
+                    break
+                forever_offsets.add(command_offset)
+            # else: stretch pass (CONVERT_TO_MIDI) — loop forever until the
+            # stop_tick bound above terminates the track.
+            pos = target
         elif status == 0x17:
             break
         elif status == 0x18:
@@ -860,16 +872,16 @@ def decode_sequence(
     if all(read_u16(data, start + 1 + index * 2) == 0 for index in range(12)):
         print(f"  warning: {title}: all track pointers empty (skipped)")
         return [], []
-    tracks: list[Track] = []
     pcm_track = Track("PCM (Channel 10)", 9)
     has_pcm_tracks = False
     tempo_events: list[tuple[int, int]] = []
+
+    # Validate and gather the valid track pointers first.
+    entries: list[tuple[int, int]] = []  # (track_index, pointer)
     for index in range(12):
         pointer = read_u16(data, start + 1 + index * 2)
         if pointer == 0:
             continue
-        # Track data may legally sit at a lower address than the sequence
-        # header, so only the upper bound and zero are invalid.
         if pointer >= len(data):
             print(
                 f"  warning: {title}: invalid track {index + 1} pointer "
@@ -887,9 +899,16 @@ def decode_sequence(
                 f"in 0xFF padding; skipping track"
             )
             continue
+        entries.append((index, pointer))
+
+    # --- Pass 1 (measurement): decode every track once (no stretching) to
+    # learn the whole-sequence length, VGMTrans's FIND_DELTA_LENGTH pass.
+    measured: list[tuple[int, int, Track, list[tuple[int, int]]]] = []
+    for index, pointer in entries:
         try:
             track, tempos = decode_track(
-                data, pointer, index, f"Track {index + 1:02d}", pcm_notes_by_program
+                data, pointer, index, f"Track {index + 1:02d}",
+                pcm_notes_by_program, None,
             )
         except ValueError as exc:
             print(
@@ -897,6 +916,30 @@ def decode_sequence(
                 f"failed to decode ({exc}); skipping track"
             )
             continue
+        measured.append((index, pointer, track, tempos))
+
+    stop_tick = max((track_length(t) for _i, _p, t, _t in measured), default=0)
+
+    # --- Pass 2 (stretch): re-decode any infinite-loop track (a ``0x16`` /
+    # Loop Always) up to the whole-sequence length so its repeating phrase
+    # fills the song. This mirrors VGMTrans's CONVERT_TO_MIDI pass, where
+    # forever-loop tracks repeat until stopTime (= max track length).
+    tracks: list[Track] = []
+    for index, pointer, _track, tempos in measured:
+        if index < 8 and track_uses_forever_loop(data, pointer):
+            try:
+                track, _ = decode_track(
+                    data, pointer, index, f"Track {index + 1:02d}",
+                    pcm_notes_by_program, stop_tick,
+                )
+            except ValueError as exc:
+                print(
+                    f"  warning: {title}: track {index + 1} at 0x{pointer:x} "
+                    f"failed to stretch ({exc}); using measured track"
+                )
+                track = _track
+        else:
+            track = _track
         if index >= 8:
             has_pcm_tracks = True
             pcm_track.note_count += track.note_count
@@ -916,6 +959,57 @@ def decode_sequence(
     if not tracks:
         print(f"  warning: {title}: no track decoded any events (skipped)")
     return tracks, tempo_events
+
+
+def track_uses_forever_loop(data: bytes, start: int) -> bool:
+    """Return True if the track starting at ``start`` reaches a ``0x16``
+    (Loop Always) opcode, i.e. it loops infinitely until the sequence ends.
+
+    We follow the actual control flow (jumps included) rather than scanning
+    raw bytes, so a ``0x16`` sitting inside unrelated data is not a false
+    positive. This mirrors VGMTrans, which re-decodes forever-loop tracks up
+    to the whole sequence length in the CONVERT_TO_MIDI pass.
+    """
+    operand_size = {
+        0x00: 0, 0x01: 0, 0x02: 0, 0x03: 0, 0x04: 1, 0x05: 2, 0x06: 1,
+        0x07: 1, 0x08: 1, 0x09: 1, 0x0A: 1, 0x0B: 1, 0x0C: 1, 0x0D: 1,
+        0x18: 1, 0x19: 1, 0x1A: 1, 0x1B: 1, 0x1C: 1, 0x1D: 1, 0x1E: 1,
+        0x1F: 1, 0x20: 1, 0x21: 1, 0x22: 1, 0x23: 1,
+    }
+    pos = start
+    seen: set[int] = set()
+    for _ in range(MAX_STEPS):
+        if pos >= len(data) or pos in seen:
+            return False
+        seen.add(pos)
+        status = data[pos]
+        if status >= 0x20:
+            pos += 1
+            continue
+        if 0x0E <= status <= 0x11:
+            target = read_u16(data, pos + 2)
+            if target == 0:
+                return False
+            pos = target
+            continue
+        if 0x12 <= status <= 0x15:
+            pos = read_u16(data, pos + 2)
+            continue
+        if status == 0x16:
+            return True
+        if status == 0x17:
+            return False
+        if status in operand_size:
+            pos += 1 + operand_size[status]
+            continue
+        # Unknown opcode: stop (matches decode_track).
+        return False
+    return False
+
+
+def track_length(track: Track) -> int:
+    ticks = [tick for tick, _priority, _payload in track.events]
+    return max(ticks) if ticks else 0
 
 
 def safe_filename(title: str) -> str:
@@ -954,10 +1048,16 @@ def convert_game(
     if tables + header_size > len(data):
         raise ValueError(f"CPS-1 tables header outside ROM at 0x{tables:x}")
     sequence_table = tables + header_size
-    # The count byte only records how many of the 256 table slots are
-    # used, not the highest code (e.g. Final Fight has code 0xF0 with
-    # count 0xC3). Size the table by the highest code we actually need.
-    table_codes = min(256, max(game.titles, default=0) + 1)
+    # The count byte records how many of the 256 table slots hold a valid
+    # sequence pointer. VGMTrans only enumerates codes 0..numSeqs-1; codes at
+    # or beyond it read past the table into the instrument data (their
+    # "pointers" are instrument bytes misread as sequences), producing tens of
+    # thousands of bogus notes. Those entries are PCM one-shots or placeholders
+    # with no FM sequence and must not be decoded.
+    num_seqs = data[tables]
+    if num_seqs == 0:
+        num_seqs = min(256, max(game.titles, default=0) + 1)
+    table_codes = num_seqs
     if sequence_table + table_codes * 2 > len(data):
         raise ValueError(f"CPS-1 sequence pointer table at 0x{tables:x} extends past the code ROM")
 
@@ -974,8 +1074,13 @@ def convert_game(
     failure: str | None = None
     for code, title in game.titles.items():
         if code >= table_codes:
-            failure = f"song code 0x{code:02x} is outside the sequence table (0x{table_codes:02x})"
-            break
+            # Code is beyond the valid sequence table (numSeqs). It has no FM
+            # sequence; its pointer lands in the instrument table. Skip it.
+            print(
+                f"  warning: 0x{code:02x} {title}: outside the sequence "
+                f"table (numSeqs=0x{table_codes:02x}); no FM sequence, skipped"
+            )
+            continue
         sequence_start = read_u16(data, sequence_table + code * 2)
         if sequence_start == 0:
             continue
