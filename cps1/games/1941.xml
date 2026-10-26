@@ -5,7 +5,7 @@
     <options>
         <option name="pcm_mix" value="0x3c" />
     </options>
-    <romlist archive="1941" format-version="CPS1_V2.00" tables="0x1000">
+    <romlist archive="1941">
         <rom type="code" offset="0x00000">41_9.12b</rom>
         <rom type="pcm" offset="0x00000">41_18.11c</rom>
         <rom type="pcm" offset="0x20000">41_19.12c</rom>

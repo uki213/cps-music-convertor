@@ -1,0 +1,229 @@
+{
+  "_comment": "CPS-1 sound-program tables offsets. Sourced from VGMTrans mame_roms.json (v1.3). audiocpu-roms is the primary matching key; tables is the offset, format-version the driver format. Only CPS1_V2.00 / V3.50 / V4.25 are currently supported by the converter.",
+  "games": {
+    "1941": {
+      "format-version": "CPS1_V2.00",
+      "tables": "0x1000",
+      "audiocpu-roms": [
+        "41_9.12b"
+      ]
+    },
+    "3wonders": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "rt_9.12b"
+      ]
+    },
+    "captcomm": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "cc_09.11a"
+      ]
+    },
+    "cawing": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "ca_9.12b"
+      ]
+    },
+    "cworld2j": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "q5_23.13b"
+      ]
+    },
+    "dynwar": {
+      "format-version": "CPS1_V1.00",
+      "tables": "0xE57",
+      "audiocpu-roms": [
+        "tke_17.12b"
+      ]
+    },
+    "ffight": {
+      "format-version": "CPS1_V2.00",
+      "tables": "0x1000",
+      "audiocpu-roms": [
+        "ff_09.12b"
+      ]
+    },
+    "forgottn": {
+      "format-version": "CPS1_V1.00",
+      "tables": "0xDD0",
+      "audiocpu-roms": [
+        "lw_37.13c"
+      ]
+    },
+    "ganbare": {
+      "format-version": "CPS1_V5.00",
+      "tables": "0xFFE",
+      "audiocpu-roms": [
+        "mrnj_09.12a"
+      ]
+    },
+    "ghouls": {
+      "format-version": "CPS1_V1.00",
+      "tables": "0xDF0",
+      "audiocpu-roms": [
+        "26.10a"
+      ]
+    },
+    "gulunpa": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "9"
+      ]
+    },
+    "kenseim": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "knm_09.12a"
+      ]
+    },
+    "knights": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "kr_09.11a"
+      ]
+    },
+    "kod": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "kd_9.12a"
+      ]
+    },
+    "megaman": {
+      "format-version": "CPS1_V5.02",
+      "tables": "0xFFE",
+      "audiocpu-roms": [
+        "rcm_09.11a"
+      ]
+    },
+    "mercs": {
+      "format-version": "CPS1_V3.50",
+      "tables": "0x1000",
+      "audiocpu-roms": [
+        "so2_09.12b"
+      ]
+    },
+    "mpumpkin": {
+      "format-version": "CPS1_V5.00",
+      "tables": "0xFFE",
+      "audiocpu-roms": [
+        "mpa_09.12a"
+      ]
+    },
+    "msword": {
+      "format-version": "CPS1_V3.50",
+      "tables": "0x1000",
+      "audiocpu-roms": [
+        "ms_09.12b"
+      ]
+    },
+    "mtwins": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "ch_09.12b"
+      ]
+    },
+    "nemo": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "nme_09.12b"
+      ]
+    },
+    "pang3": {
+      "format-version": "CPS1_V5.00",
+      "tables": "0xFFE",
+      "audiocpu-roms": [
+        "pa3_11.11f"
+      ]
+    },
+    "pnickj": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "pnij_17.13b"
+      ]
+    },
+    "pokonyan": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "xmqq-13b.bin"
+      ]
+    },
+    "qad": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "qd_23.13b"
+      ]
+    },
+    "qtono2j": {
+      "format-version": "CPS1_V5.00",
+      "tables": "0xFFE",
+      "audiocpu-roms": [
+        "tn2j_09.12a"
+      ]
+    },
+    "sf2": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "sf2_9.12a"
+      ]
+    },
+    "sf2ce": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "s92_09.11a"
+      ]
+    },
+    "sf2hf": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "s92_09.11a"
+      ]
+    },
+    "strider": {
+      "format-version": "CPS1_V1.00",
+      "tables": "0xDCD",
+      "audiocpu-roms": [
+        "09.12b"
+      ]
+    },
+    "unsquad": {
+      "format-version": "CPS1_V1.00",
+      "tables": "0xE57",
+      "audiocpu-roms": [
+        "ar_09.12b"
+      ]
+    },
+    "varth": {
+      "format-version": "CPS1_V4.25",
+      "tables": "0x1100",
+      "audiocpu-roms": [
+        "va_09.12b"
+      ]
+    },
+    "willow": {
+      "format-version": "CPS1_V1.00",
+      "tables": "0xe6d",
+      "audiocpu-roms": [
+        "wl_09.12b"
+      ]
+    }
+  }
+}

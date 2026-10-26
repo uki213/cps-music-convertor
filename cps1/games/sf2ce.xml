@@ -5,7 +5,7 @@
 		<options>
 			<option name="pcm_mix" value="0x3c"/>
 		</options>
-		<romlist archive="sf2ce" format-version="CPS1_V4.25" tables="0x1100">
+		<romlist archive="sf2ce">
 			<rom type="code" offset="0x00000">s92_09.11a</rom>
 			<rom type="pcm" offset="0x00000">s92_18.11c</rom>
 			<rom type="pcm" offset="0x20000">s92_19.12c</rom>

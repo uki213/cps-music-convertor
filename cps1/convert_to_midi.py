@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import struct
 import wave
@@ -33,6 +34,39 @@ DELTA_TABLE = (
     (0, 9, 18, 36, 72, 144, 0),
 )
 OCTAVE_TABLE = (0, 12, 24, 36, 48, 60, 72, 84, 24, 36, 48, 60, 72, 84, 96, 108)
+
+TABLES_JSON = BASE_DIR / "tables.json"
+
+
+def resolve_game_from_builtin(archive: str, code_roms: list[str]) -> tuple[int, str]:
+    """Resolve (tables offset, format-version) from the built-in CPS-1 table.
+
+    Match first on the XML's code ROM filename (most robust), then fall back
+    to the MAME shortname (archive). The built-in table is sourced from
+    VGMTrans mame_roms.json so the keys are MAME shortnames.
+    """
+    if not TABLES_JSON.is_file():
+        raise ValueError(
+            f"{TABLES_JSON.name} not found; create the built-in CPS-1 table"
+        )
+    data = json.loads(TABLES_JSON.read_text(encoding="utf-8"))
+    games = data.get("games", {})
+
+    # Primary: match by XML's code ROM filename (case-insensitive).
+    rom_set = {r.lower() for r in code_roms}
+    for entry in games.values():
+        if any(rom.lower() in rom_set for rom in entry.get("audiocpu-roms", [])):
+            return int(entry["tables"], 16), entry["format-version"]
+
+    # Fallback: match by MAME shortname (archive).
+    entry = games.get(archive)
+    if entry is not None:
+        return int(entry["tables"], 16), entry["format-version"]
+
+    raise ValueError(
+        f"archive {archive!r} not matched in {TABLES_JSON.name} by ROM name or "
+        f"MAME shortname"
+    )
 
 
 @dataclass(frozen=True)
@@ -69,25 +103,25 @@ def read_game(path: Path) -> Game:
     archive = romlist.get("archive", "").strip()
     if not archive or Path(archive).name != archive or archive in (".", ".."):
         raise ValueError(f"invalid ROM archive name in {path}")
-    tables_text = (romlist.get("tables") or "").strip()
-    if not tables_text:
-        raise ValueError(
-            f"missing required 'tables' attribute on <romlist> in {path}; "
-            "specify the CPS-1 sound-program tables offset (e.g. tables=\"0x1000\")"
-        )
-    try:
-        tables_offset = int(tables_text, 0)
-    except ValueError as error:
-        raise ValueError(
-            f"invalid 'tables' attribute {tables_text!r} in {path}"
-        ) from error
-    version = (romlist.get("format-version") or "CPS1_V4.25").strip()
+    # Collect code ROM names (needed for the built-in table lookup).
+    code_rom_names = [
+        (el.text or "").strip() for el in romlist.findall("rom")
+        if el.get("type") == "code"
+    ]
+    if not code_rom_names:
+        raise ValueError(f"no <rom type=\"code\"> entries in {path}")
+
+    # The sound-program tables offset and the driver format are looked up
+    # from the built-in table (cps1/tables.json, sourced from VGMTrans's
+    # mame_roms.json) by matching on the code ROM filename or MAME shortname.
+    tables_offset, version = resolve_game_from_builtin(
+        archive, code_rom_names
+    )
     if version not in ("CPS1_V4.25", "CPS1_V3.50", "CPS1_V2.00"):
         raise ValueError(
-            f"unsupported CPS-1 format version {version!r}; expected "
-            "'CPS1_V4.25', 'CPS1_V3.50' or 'CPS1_V2.00'"
+            f"unsupported CPS-1 format version {version!r} for {archive!r}; "
+            f"expected 'CPS1_V4.25', 'CPS1_V3.50' or 'CPS1_V2.00'"
         )
-    
     # For now, we treat both versions the same way since they're likely to be
     # compatible at the core conversion level, but can be extended for specific differences
 

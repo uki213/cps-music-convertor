@@ -45,8 +45,11 @@ CPS-1 のサウンドプログラムは**コードROM** (Z80実行可能なサ�
 
 > **重要:** テーブルは `format-version` で決まる固定ヘッダを持つ**1つの位置**にあり、
 > その位置は ROM 自体からは一意に判定できない (同じ構造を持つ偽のテーブルが
-> 複数存在する)。そのため XML の `tables` 属性で**明示指定が必須**です。
-> 自動検出は 2025-10 に削除済み (誤検出リスクのため)。
+> 複数存在する)。そのため ROM からの自動検出は行わず (2025-10 に削除)、
+> 同梱の `tables.json`（VGMTrans の `mame_roms.json` を転記した CPS-1
+> ゲーム別テーブル）から、**コードROMのファイル名 → MAME名 (`archive`)
+> の順**で解決します。XML の `<romlist>` には `archive` と `<rom>` 要素のみで
+> 十分です。
 
 ---
 
@@ -105,7 +108,7 @@ CPS-1 のサウンドプログラムは**コードROM** (Z80実行可能なサ�
 |:------|:-------------:|:--------:|:-----|
 | ffight   | CPS1_V2.00 | `0x1000` | 当初 `0x0704` が誤検出値 |
 | 1941     | CPS1_V2.00 | `0x1000` | 当初 `0x06ee` が誤検出値 |
-| mercs    | **CPS1_V3.50** | `0x1002` | XML は当初 V2.00 と誤記載。実体は V3.50 |
+| mercs    | **CPS1_V3.50** | `0x1000` | XML は当初 V2.00 と誤記載。実体は V3.50 |
 | msword   | CPS1_V3.50 | `0x1000` | V3.50 形式で唯一整合するヘッダ |
 | knights  | CPS1_V4.25 | `0x1100` | V4.25 形式で唯一整合するヘッダ |
 | sf2ce    | CPS1_V4.25 | `0x1100` | |
@@ -137,7 +140,9 @@ CPS-1 のサウンドプログラムは**コードROM** (Z80実行可能なサ�
 
 > **教訓:** `format-version` が ROM の実態と食い違うと (mercs が V2.00 表記なのに
 > 実際 V3.50) ヘッダ解釈自体が崩れ、テーブル自体を見つけられない。
-> `format-version` と `tables` は**両方とも正しく**書く必要があります。
+> 現在は `tables.json` に `format-version` と `tables` をセットで保持し、
+> XML から ROM名・`archive` でのみ解決するため、この種の食い違いは
+> テーブル側が正しい値を保証する (vgmtrans / ROM 実測で裏取り済み)。
 
 ---
 
@@ -473,15 +478,19 @@ MIDI 化せずスキップ (例: ボイス、効果音)。
 ### 10.5 `format-version` の誤記載 (mercs)
 
 mercs は XML に `CPS1_V2.00` と記載されていたが、ROM の実体は **V3.50**
-(4バイトヘッダ, tables=0x1002)。V2.00 の3バイトヘッダで解釈すると
+(4バイトヘッダ, tables=0x1000)。V2.00 の3バイトヘッダで解釈すると
 OPM ポインタが内容範囲外を指し、全タイトルが失敗した。
 `format-version` と `tables` を ROM 実態に合わせ修正して解決。
 
-### 10.6 自動検出の削除
+### 10.6 自動検出の削除と tables.json
 
-`tables` の自動検出 (`autodetect_tables_candidates`) は
+`tables` の ROM 内自動検出 (`autodetect_tables_candidates`) は
 - 偽テーブル (上記 §3 のように構造だけ似る位置) を誤って採用しうる
 - `format-version` が誤ると検出自体が崩壊する
 
-ため **2025-10 に削除**。XML の `tables` が必須となり、
-無い場合は `missing required 'tables' attribute` で明示エラー。
+ため **2025-10 に削除**。その代替として `cps1/tables.json` を用意しました。
+これは VGMTrans の `mame_roms.json`（CPS-1 の各ゲームがどの `tables` と
+どの `format-version` を使うかの既知のテーブル）を転記したもので、
+XML の `<romlist>` から **コードROMのファイル名 → MAME 名 (`archive`)
+の順**で解決します。`tables.json` に該当ゲームが無い場合は
+`archive ... not matched in tables.json` のエラーになります。

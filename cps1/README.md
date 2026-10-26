@@ -51,8 +51,11 @@ python .\cps1\convert_to_midi.py .\cps1\games\sf2ce.xml --opm-output .\exports\s
 
 ## XMLとROM
 
-XMLの `<romlist>` には `archive`、`format-version`、`tables` 属性を指定します。
-`tables` はサウンドプログラムROM内のシーケンス情報テーブルの位置です。
+XMLの `<romlist>` には `archive` 属性のみを指定します。
+サウンドプログラムテーブルの位置（`tables`）とドライバー形式
+（`format-version`）は、同ディレクトリの `tables.json`（VGMTrans の
+`mame_roms.json` を元にした CPS-1 ゲーム別テーブル）から、
+**コードROMのファイル名 → MAME名（`archive`）の順**で解決されます。
 コードROMは `roms/<archive>/` から読み込み、`offset` で指定した位置へ配置します。
 曲名と曲コードは `<titlelist>` から取得します。
 
