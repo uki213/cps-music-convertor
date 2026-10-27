@@ -16,8 +16,8 @@ Two voice sets:
 
 Only the Python standard library is used; the SF2 binary is written
 directly with ``struct`` following the Creative Labs SoundFont 2.01 spec
-(standard chunk tags: hdrl / INFO / pdta{phdr,pmod,pbag,inst,ibag,imod,
-igen,shdr,smpl}).
+(top-level order sfbk -> INFO -> sdta{smpl} -> pdta{phdr,pmod,pbag,pgen,
+inst,ibag,imod,igen,shdr}; there is no hdrl chunk).
 """
 
 from __future__ import annotations
@@ -110,44 +110,55 @@ def _operator_gain(
 ) -> float:
     """Return linear gain (0.0-1.0) for one YM2151 operator at time t.
 
+    YM2151 rate encoding: 0 = no rate (instantaneous), 1-15 = rate
+    (higher rate = faster = shorter time).  The AR_TIMES_MS table is
+    indexed low-to-high time, so the rate index must be inverted:
+    rate 15 (fastest) → AR_TIMES_MS[0] (shortest time), etc.
+
     Uses the OPL/YM2151 7-bit attenuation model:
       0   = 0 dB attenuation (full signal)
       127 = 150 dB attenuation (silence)
       1 unit = 150/127 dB ≈ 1.181 dB
     """
-    ar = min(15, ar)
-    dr = min(15, dr)
-    sr = min(15, sr)
-    sl = sl & 0x0F          # 4-bit sustain level (0-15)
+    ar = min(15, max(0, ar))
+    dr = min(15, max(0, dr))
+    sr = min(15, max(0, sr))
+    sl = sl & 0x0F          # 4-bit sustain level (0=full, 15=silence)
 
     # Static attenuation: TL (7-bit) + DT2 (2-bit, 1 step = 2 dB = 16 units)
     static_att = (tl & 0x7F) + (dt2 & 0x03) * 16
 
-    # Envelope attenuation in 0-127 units.
+    # Sustain level attenuation in 0-127 units.
+    # SL=0 → 0 units (full), SL=15 → 120 units (near silence).
+    sl_att = float(sl * 8)
+
+    # Attack phase duration (0 if ar==0, meaning instantaneous).
     if ar == 0:
-        eg_att = 127.0
+        t_ar = 0.0
     else:
-        t_ar = AR_TIMES_MS[ar] / 1000.0
-        if t < t_ar:
-            # Linear attack from silence (127) to full (0).
-            eg_att = 127.0 * (1.0 - t / t_ar)
+        t_ar = AR_TIMES_MS[15 - ar] / 1000.0  # inverted: rate 15 → index 0
+
+    if t < t_ar:
+        # In attack phase: linear ramp from silence (127) to full (0).
+        eg_att = 127.0 * (1.0 - t / t_ar) if t_ar > 0 else 0.0
+    else:
+        # After attack: decay → sustain.
+        t_d = t - t_ar
+        if dr == 0:
+            eg_att = sl_att  # instantaneous decay to sustain level
         else:
-            # Sustain level in 0-127 units (4-bit SL, 1 step = 150/16 dB).
-            sl_units = float(sl * 8)  # sl=15 -> 120, close to max
-            if dr == 0:
-                eg_att = sl_units
+            t_dr = AR_TIMES_MS[15 - dr] / 1000.0
+            if t_d < t_dr:
+                # Exponential approach from 0 toward sl_att.
+                eg_att = sl_att * (1.0 - math.exp(-t_d / t_dr))
             else:
-                # DR time = 16 x AR time (OPL standard).
-                t_dr = AR_TIMES_MS[dr] / 1000.0 * 16.0
-                t_d = t - t_ar
-                # Exponential approach to sustain level.
-                eg_att = sl_units * (1.0 - math.exp(-t_d / t_dr))
-                # Sustain phase: exponential decay from SL to silence.
-                if sr > 0 and t_d > 3.0 * t_dr:
-                    # SR time = 16 x DR time = 256 x AR time.
-                    t_sr = AR_TIMES_MS[sr] / 1000.0 * 256.0
-                    t_s = t_d - 3.0 * t_dr
-                    eg_att = 127.0 - (127.0 - sl_units) * math.exp(-t_s / t_sr)
+                if sr == 0:
+                    eg_att = sl_att  # hold at sustain level
+                else:
+                    t_sr = AR_TIMES_MS[15 - sr] / 1000.0
+                    t_s = t_d - t_dr
+                    # Exponential decay from sl_att toward silence (127).
+                    eg_att = 127.0 - (127.0 - sl_att) * math.exp(-t_s / t_sr)
 
     total_att = min(127.0, eg_att + static_att)
     if total_att >= 127.0:
@@ -258,7 +269,7 @@ GEN_INSTRUMENT = 41
 GEN_KEY_RANGE = 43
 GEN_KEYNUM = 46
 GEN_SAMPLE_ID = 53
-GEN_OVERRIDING_ROOT_KEY = 59
+GEN_OVERRIDING_ROOT_KEY = 58
 
 
 def _pad4(data: bytes) -> bytes:
@@ -302,18 +313,22 @@ def write_sf2(
     for idx, sample in enumerate(list(fm_samples) + list(pcm_samples)):
         end = len(sample["data"])
         root = sample.get("root_key", sample.get("note", 60))
+        # SHDR record is 46 bytes (fluidsynth SF_SHDR_SIZE = 46).
+        # Layout per spec: name(20) + start(4) + end(4) + loopstart(4)
+        # + loopend(4) + samplerate(4) + origpitch(1) + pitchfraction(1)
+        # + samplelink(2) + sampletype(2) = 20+4*5+2+4 = 46 bytes.
         shdr += struct.pack(
             "<20sIIIIIBbhH",
             sample["name"][:20].encode("ascii").ljust(20, b"\x00"),
-            sample_offsets[idx],
-            sample_offsets[idx] + end,
-            sample_offsets[idx],
-            sample_offsets[idx] + end,
-            sample["rate"],
-            root & 0x7F,
-            0,
-            0,
-            0x8000,  # monaural
+            sample_offsets[idx],        # start (samples)
+            sample_offsets[idx] + end,  # end (samples)
+            sample_offsets[idx],        # loopstart
+            sample_offsets[idx] + end,  # loopend
+            sample["rate"],             # samplerate
+            root & 0x7F,                # origpitch (MIDI note)
+            0,                          # pitchfraction (cents/10)
+            0,                          # samplelink
+            0x01,                       # sampletype: 0x01 = mono
         )
 
     # ---- phdr ----
@@ -322,50 +337,82 @@ def write_sf2(
         phdr += struct.pack(
             "<20sHHHIii",
             name[:20].encode("ascii").ljust(20, b"\x00"),
-            idx,       # preset number = program (bank select 0/1 in the MIDI)
-            1,         # bank LSB (MSB 0 comes from the MIDI stream)
-            idx,       # preset bag index
+            idx,       # preset number = program (0-126)
+            0,         # bank 0 (GM MSB=0; the MIDI's CC32=1 is a sub-bank LSB)
+            idx,       # preset bag index (cumulative zone offset, 0-based)
             0, 0, 0,   # library / genre / morph
         )
     if pcm_count:
         phdr += struct.pack(
             "<20sHHHIii",
             b"CPS1 PCM".ljust(20, b"\x00"),
-            7,         # preset 8 (GM percussion), bank 0/0
-            0,
-            fm_count,  # preset bag index
+            7,         # program 7 (0-based) = GM preset 8 percussion
+            128,       # bank 128: GM percussion bank (MIDI bank-select MSB default)
+            fm_count,  # preset bag index = fm_count (cumulative zone offset)
             0, 0, 0,
         )
+    # Mandatory phdr terminator (last record); pbag_idx = total preset zones.
+    phdr += struct.pack(
+        "<20sHHHIii",
+        b"EOP".ljust(20, b"\x00"),
+        255,
+        255,
+        preset_zone_count,
+        0, 0, 0,
+    )
 
     # ---- pmod / pbag ----
-    pmod = b"\x00" * (10 * preset_zone_count)
+    # No preset modulators (pmod is empty), so every pbag entry's modndx
+    # must be 0.  genndx is cumulative: each zone owns exactly one pgen
+    # entry (GEN_INSTRUMENT), so zone i's genndx = i+1.
+    pmod = b""
     pbag = b""
     for idx in range(preset_zone_count):
-        pbag += struct.pack("<HH", idx * 1, idx * 1)  # gen index, mod index
+        pbag += struct.pack("<HH", idx + 1, 0)  # genndx, modndx
+    # Terminator: genndx = total pgen entries (= preset_zone_count), modndx=0.
+    pbag += struct.pack("<HH", preset_zone_count, 0)
     # Each preset zone gets one generator: instrument = its index.
     pgen = b""
     for idx in range(preset_zone_count):
         pgen += struct.pack("<Hh", GEN_INSTRUMENT, idx)
 
     # ---- inst ----
+    # fluidsynth's load_ihdr (fluid_sffile.c) allocates zones to each
+    # instrument from deltas:
+    #   inst[0]     : if nZones > 0, warns "N zones not referenced,
+    #                 discarding" (no zones allocated to it from its own
+    #                 field).  So inst[0].nZones must be 0.
+    #   inst[i] (i>=1): zones allocated = inst[i].nZones - inst[i-1].nZones
+    #   terminator  : zones allocated to last real inst =
+    #                 terminator.nZones - last_inst.nZones
+    # For fm_count FM instruments (1 zone each) + PCM kit (pcm_count zones):
+    #   inst[i].nZones (i=0..fm_count-1) = i      -> each FM inst gets 1 zone
+    #   inst[fm_count].nZones (kit)      = fm_count
+    #   terminator.nZones                = fm_count + pcm_count (= total)
+    # This yields: FM insts get 1 zone each, kit gets pcm_count zones.
     inst = b""
     for idx in range(instrument_count):
         name = (
             fm_names[idx][:20] if idx < fm_count else "CPS1 PCM KIT"
         )
-        inst += struct.pack("<20sH", name.encode("ascii").ljust(20, b"\x00"), idx)
+        nz = idx
+        inst += struct.pack("<20sH", name.encode("ascii").ljust(20, b"\x00"), nz)
+    # Terminator: nZones = total instrument zones.
+    inst += struct.pack("<20sH", b"EOP".ljust(20, b"\x00"), instrument_zone_count)
 
     # ---- ibag / imod / igen ----
     ibag = b""
     for idx in range(instrument_zone_count):
         ibag += struct.pack("<HH", idx * 3, 0)
+    ibag += struct.pack("<HH", instrument_zone_count * 3, 0)  # terminator: genndx = total generators
 
-    imod = b"\x00" * (10 * instrument_zone_count)
+    # No instrument modulators: leave imod empty (fluidsynth allows size==0).
+    imod = b""
 
     igen = b""
     sample_index = 0
     for idx in range(fm_count):
-        igen += struct.pack("<Hh", GEN_KEY_RANGE, (127 << 4) | 0)
+        igen += struct.pack("<Hh", GEN_KEY_RANGE, (127 << 8) | 0)  # hi=127, lo=0
         igen += struct.pack("<Hh", GEN_OVERRIDING_ROOT_KEY, 60)
         igen += struct.pack("<Hh", GEN_SAMPLE_ID, sample_index)
         sample_index += 1
@@ -375,27 +422,36 @@ def write_sf2(
         igen += struct.pack("<Hh", GEN_OVERRIDING_ROOT_KEY, note)
         igen += struct.pack("<Hh", GEN_SAMPLE_ID, sample_index)
         sample_index += 1
-    igen += struct.pack("<Hh", 0, 0)  # terminator
 
-    # ---- hdrl (24 bytes = 12 uint16) ----
-    hdrl = struct.pack("<12H",
-        preset_count, instrument_count, 0, 0,
-        0, 0, 0,
-        0x0002, 0x0001, 0, 2025, 0,
-    )
+    # ---- INFO ---- (standard RIFF INFO sub-chunks; see SGM-V2.01.sf2 reference)
+    # RIFF chunks must be word-aligned: if a payload has odd length, append a
+    # pad byte (the size field still holds the true payload length).
+    def _info(tag: bytes, payload: bytes) -> bytes:
+        data = tag + struct.pack("<I", len(payload)) + payload
+        if len(payload) % 2:
+            data += b"\x00"
+        return data
 
-    # ---- INFO ----
-    nm04 = archive[:4].encode("ascii").ljust(4, b"\x00").upper()
-    isng = b"CPS1"
+    ifil = struct.pack("<HH", 2, 1)  # SoundFont 2.01
+    def _info_str(tag: bytes, text: str) -> bytes:
+        # NUL-terminate, then pad to even length (RIFF word-alignment;
+        # fluidsynth strictly rejects odd-sized INFO sub-chunks).
+        data = text.encode("ascii") + b"\x00"
+        if len(data) % 2:
+            data += b"\x00"
+        return _info(tag, data)
+
     info_body = (
-        b"nm04" + struct.pack("<I", 4) + nm04
-        + b"isng" + struct.pack("<I", 4) + isng
+        _info(b"ifil", ifil)
+        + _info_str(b"INAM", archive[:30])
+        + _info_str(b"isng", "CPS1")
     )
 
     # ---- assemble ----
+    # Top-level order per spec: sfbk -> LIST INFO -> LIST sdta -> LIST pdta.
+    # (There is NO hdrl chunk; the SoundFont 2.01 spec has none.)
     out = bytearray()
     out += b"RIFF" + struct.pack("<I", 0) + b"sfbk"
-    out += b"hdrl" + struct.pack("<I", 24) + hdrl
     out += b"LIST" + struct.pack("<I", len(info_body) + 4) + b"INFO" + info_body
 
     # Sample data LIST chunk.
@@ -403,10 +459,12 @@ def write_sf2(
     out += b"LIST" + struct.pack("<I", len(sdta_body) + 4) + b"sdta" + sdta_body
 
     # Preset data LIST chunk.
+    # SGM-V2.01.sf2 (a known-good reference) orders pbag before pmod;
+    # fluidsynth follows the same order, so match it.
     pdta_body = (
         b"phdr" + struct.pack("<I", len(phdr)) + phdr
-        + b"pmod" + struct.pack("<I", len(pmod)) + pmod
         + b"pbag" + struct.pack("<I", len(pbag)) + pbag
+        + b"pmod" + struct.pack("<I", len(pmod)) + pmod
         + b"pgen" + struct.pack("<I", len(pgen)) + pgen
         + b"inst" + struct.pack("<I", len(inst)) + inst
         + b"ibag" + struct.pack("<I", len(ibag)) + ibag

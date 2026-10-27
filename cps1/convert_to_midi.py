@@ -609,6 +609,9 @@ def make_midi(tracks: list[Track], tempo_events: list[tuple[int, int]]) -> bytes
                 (0, 0, bytes((0xB0 | channel, 32, SMAF_USER_VOICE_BANK_LSB))),
             )
         )
+    if any(track.channel == 9 for track in tracks):
+        # Drum channel: select the SF2 PCM kit (GM preset 8 / 0-indexed 7).
+        events.append((0, 0, b"\xc9\x07"))
     for tick, micros_per_beat in sorted(set(tempo_events)):
         events.append((tick, 1, b"\xff\x51\x03" + micros_per_beat.to_bytes(3, "big")))
     for track in tracks:
