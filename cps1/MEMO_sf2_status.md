@@ -1,19 +1,123 @@
-# CPS-1 SF2 生成 — 進捗メモ（2026-10-27 作成、2026-10-28 更新）
+# CPS-1 SF2 生成 — 進捗メモ（2026-10-27 作成、2026-10-29 更新）
 
-## 🚧 現状（2026-10-28 夜、ユーザー確認済み）
+## 🎯 現状（2026-10-29 時点）
 - **FM パート: 鳴っている**（keyRange 修正 + ADSR rate 修正の成果）
-- **PCM（ドラム）パート: まだ鳴っていない** ← 未解決、次の作業対象
-  - MIDI 側は ch9（トラック9）にノート・プログラムチェンジ(7)が含まれることは確認済み
-  - SF2 側は PCM キットを **bank 128 / preset 7 (GM Acoustic Kit)** に
-    keynum 単位の 95 region として登録済み
-  - fluidsynth レンダリングでは全秒 peak=32768 になる（FM の音は混ざっているが、
-    ドラムが実際に鳴っているかまで聴覚で確認できていない）
-  - 疑い: ch9 のノート番号 ↔ region keynum の紐付け、PCM 用 igen の
-    keyRange / overrideRootKey / sample 指定、program change のタイミング
-    （`No preset found on channel 9 [bank=128 prog=0]` 警告が program change
-    前に一度出るのを確認済み — これは無害のはずだが要検証）
-  - 切り分け手順の候補: ch9 のノートだけを抜いた最小 MIDI を作って fluidsynth
-    で単独再生 → PCM region のみで鳴るかを 1 音ずつ確認
+- **PCM（ドラム）パート: 鳴る**（ユーザー確認済み、リズムも正しい）
+- **PCM の音色がオリジナルと合わない**（ユーザー指摘・未解決）
+  - ユーザーの要望: ノートオンからノートオフまで、サンプル先頭から
+    ワンショット再生（ループなし）— 現行実装はこれで OK
+  - 推定原因: MIDI の program → サンプルの割当（音色対応）がずれている
+    可能性。以下「PCM 音色ズレ調査（2026-10-29）」を参照
+- 一時ファイル 80 本を整理済み（cps1\ 直下は本体・ツール・ドキュメントのみ）
+
+## PCM 音色ズレ調査（2026-10-28 夜〜2026-10-29）
+ユーザー報告: 「PCM は鳴るが、PCM 単体（wav）で聞いた音と違う。
+RPM リズムは合っている → 音色の割当がずれていると思う」。
+
+### 検証済み（問題なし）
+1. **SF2 キット割当**（`verify_kit_map.py`）: 95/95 全てのノート N →
+   PCM0NN サンプル → `wav/sf2ce/NNN.wav` とバイト同一。ループなし。
+   **SF2 側は正しい。**
+2. **コーデック**（`check_codec.py`）: WAV は fmt=1（非圧縮）16bit 7576Hz、
+   SF2 smpl とバイト同一。**コーデック不適合ではない。**
+3. **ADPCM 復号アルゴリズム**: MAME の okiadpcm.cpp と対比し、
+   実質同一（stepval≈16・1.1^step、ニブル gating、常時 +stepval/8、
+   clamp ±2048）。**波形生成自体は正しく再現されている。**
+4. **サンプルレート**: MAME 設定 1M/132 ≈ 7575.76 Hz と実測 7576 Hz が一致。
+
+### 重要: 「オフバイワン」の疑いは誤りだった（2026-10-29 で解消）
+初期に「変換器のサンプルテーブル読み込みが MAME より 1 エントリずれて
+おり、全ドラムが隣のサンプルで鳴っている」との仮説を立てたが、
+**VGMTrans（既知の正解）の実装と突き合わせて誤りだと判明した。**
+
+- `D:\works\vgmtrans-master\src\main\formats\CPS\CPS1Instr.cpp` L52-53:
+  `rgn->sampNum = readByte(instrOff+1) - 1;`
+  コメント: *"subtract 1 to account for the first OKIM6295 sample ptr
+  always being null"* → **ゲーム ROM の楽器テーブルのバイト値は
+  1 始まり**（エントリ 0 が null ）。
+- VGMTrans のサンプルテーブルはオフセット 0 から `i = (off-8)/8` で
+  読込み（`sampColl` ヘッダ 8, 0x400-8）→ 変換器の `decode_pcm_samples`
+  （オフセット 8 開始、`idx = off//8 - 1`）と**完全に一致**。
+- したがって変換器の対応（楽器テーブルバイト値 −1 = サンプルインデックス、
+  サンプル N = ノート 24+N、wav = NNN.wav）は **VGMTrans と同等で正しい**。
+- MAME の sample N（N*8）= 変換器 sample N とは 1 ずれるが、
+  MAME の sample 0 は null であり、ゲームが 0 を発行することはない
+  （ROM テーブルのバイト値が 1 始まりのため）。実効的には一致。
+- 結論: **オフバイワン修正は行わない**（行えば逆にズレが生じる）。
+
+### sf2ce の program → sample 割当（`dump_mapping.py` 出力）
+prog 0-6 が sample 0,10,17,11,12,13,14（ゲーム固有の割当）
+prog 7 → sample 0、prog 8 → 1、…、prog 18 → 11、prog 19 → 16 …
+（以降ほぼ恒等。VGMTrans と同じ −1 方式。）
+
+### 未解決の残課題
+1. **MIDI 化時点での program/note がシーケンス本来の PCM 音色と
+   一致しているか**（`ch9_prog_note.py` は未実行で削除済み。
+   必要なら再作成: `01_Japan (Ryu) I.mid` の ch9 program change /
+   note 番号の実効リストを確認し、`dump_mapping.py` の
+   program→note 表と突き合わせる）
+2. **波形そのものが違う**（音色割当が正しいはずなのにユーザーが
+   「違う」と感じる）場合の候補:
+   - ADPCM 初期状態（MAME okiadpcm の初期 index/step）の微差
+   - volume table の差（MAME `s_volume_table[16]` と変換器の減衰表）
+   - ノート長がサンプル長より短い場合のトリム挙動
+   - 検証方法: 同一 program の「変換 wav」と「MAME で録音した音」
+     を相関比較する
+3. 実効的な検証には **MAME の録音（MIDI 化ではなく実際の Z80 シーケンス
+   再生）** が正解の基準になる
+
+## 🎯 現状（2026-10-28 深夜、バグ 9/10 特定・修正）
+- **FM パート: 鳴っている**（keyRange 修正 + ADSR rate 修正の成果）
+- **PCM（ドラム）パート: 鳴るようになった**（preset=0/7 両方にキット登録）
+- **PCM の波形がオリジナルと違う**（ユーザー指摘）
+  - **ループバグ修正済み**（SHDR loopstart/loopend = end → ワンショット）
+  - **pbag genndx バグ修正済み**（1始まり → 0始まり、SGM 準拠）
+  - **「波形が違う」の本質原因**: CPS-1 の PCM はドラム 1 打ではなく
+    **連続音声ストリーム**（PCM024.wav = 595ms のトーン）で、
+    MIDI 化するとノート長が中央値 99ms（95% が PCM より短い）になり、
+    各トリガーが PCM の先頭のみを再生するため、元の音と波形が異なる。
+    これは **MIDI 化アプローチの根本的な制約**（SF2 のバグではない）。
+  - 要: ユザーが再確認
+
+## バグ 9（2026-10-28 特定・修正）— pbag genndx のオフセット
+- **症状**: ch9/prog7（実 MIDI が使うキット）がサイレント、ch9/prog0 は鳴る
+- **原因**: `load_pbag` は各 zone の generator 数を `this_genndx − prev_genndx`
+  で算出。最後に 1 個追加の terminator を読み、**最後の zone** に
+  `terminator − last_zone` の generator を与える。
+  我々は genndx を `1,2,...,129`、terminator=129 と書いていたため、
+  **最後の zone（kit7）が `129−129 = 0` 個の generator** → SILENT。
+- **証拠**: SGM（正常）の pbag は `0,1,2,...,1970`、terminator=1974
+  → 最後の zone が `1974−1970 = 4` 個の generator を確保。
+- **修正**: pbag の genndx を 0 始まり（`idx`）に変更、terminator は
+  `preset_zone_count`（129）のまま。これで kit7 zone = 1 gen。
+- **再検証**: ch9/prog0 と ch9/prog7 の両方が peak=32768 で鳴る
+  （PCM024.wav の最大値と一致）。"Discarding invalid global zone" 警告なし。
+
+## バグ 8（2026-10-28 特定・修正）— SHDR ループ
+- **症状**: PCM がループして「波形がノイズ状」
+- **原因**: SHDR の loopstart/loopend = 末尾で永久ループ
+- **修正**: loopstart = loopend = end（ワンショット）に設定
+- **検証**: 全 222 レコード `ls==le==end` を確認
+
+## バグ 7（2026-10-27 特定・修正）— preset 0/7 二重登録
+- **症状**: ch9 鳴らない
+- **原因**: kit 0 と kit 7 が同じ pbag index を共有し、
+  fluidsynth の `load_phdr`（delta ベース zone 割り当て）で preset 0 が
+  0 zone、preset 7 が 2 zone（うち 1 つは "invalid global zone" で破棄）
+  になる
+- **修正**: kit preset 0/7 の bagidx を fm_count / fm_count+1 に分離
+
+## バグ 6（2026-10-27 特定・修正）— FM zone 末尾の keyRange
+- 2 つ目の zone に GEN_KEY_RANGE（0,0）を誤って追加していた
+- 修正: 2 つ目の zone は GEN_INSTRUMENT のみ
+
+## バグ 5（2026-10-27 特定・修正）— keyRange ビットシフト誤り
+- `127<<4` ではなく `127<<8` が必要
+- 修正: `(127 << 8) | 0`
+
+## バグ 4（2026-10-27 特定・修正）— FM エンベロープの rate index
+- AR/DR/RR/RH の rate index が逆だった
+- 修正: make_sf2.py の FM アタック/ディケイ/リリース処理を修正
 
 ## 原因の全体像（なぜ最初「全く音が鳴らなかった」か）
 「全く音が出ない」は 3 つの独立バグが重なった結果：
@@ -67,16 +171,17 @@ pmod=10 / pgen=4 / ibag=4 / imod=10 / igen=4）。
 ## 構成（2026-10-28 最終）
 - FM 音色 127（`.opm` パラメータを YM2151 シミュレータで C4 = MIDI 60 基準にレンダリング、
   44.1 kHz、**preset bank 0**、preset number 0-126、programChange 0-126）
-- PCM 音色（`wav/<archive>/NNN.wav` を **GM Acoustic Kit = bank 128 / preset 7** に
-  keynum 単位の region（222 個）として登録）
+- PCM 音色（`wav/<archive>/NNN.wav` を **GM キット = bank 128** の
+  **preset 0 と preset 7** に keynum 単位の region（95 個）として登録、
+  両 preset が同一の kit instrument 127 を指す。sample はワンショット（非ループ））
 
 ### bank / program 設定（GM 準拠）
 | チャンネル | bank (CC0/CC32) | program (CC36) | 備考 |
 |-----------|-----------------|----------------|------|
 | ch0-7 (FM) | 0 / 1 | 0-126 | YM2151 FM（C4 基準） |
-| ch9 (PCM) | 0 / 0 | 7 | GM Acoustic Kit、全ノート番号対応 |
+| ch9 (PCM) | 128（自動解決） | 0 と 7 両方 | GM キット、preset 0 (Standard Kit) と 7 (Acoustic Kit) に同一 kit instrument を登録 |
 
-### 2026-10-28 追記：2 つの致命的なサイレントバグ（構造バグとは別件）
+### 2026-10-28 追記：3 つの致命的なサイレントバグ（構造バグとは別件）
 5. **keyRange ジェネレータ（id 10）のビットシフト誤り**（完全サイレントの主因）
    - 誤: `(127 << 4) | 0` → lo=240, hi=7（不可能な範囲、どのノートもマッチしない）
    - 正: `(127 << 8) | 0` → lo=0, hi=127（全ノート対応）
@@ -86,43 +191,50 @@ pmod=10 / pgen=4 / ibag=4 / imod=10 / igen=4）。
    - 誤: `AR_TIMES_MS[ar]` → AR=13（速い発音）を 25s（遅い）として扱い、発音が 1 秒では終わらずサイレント
    - 正: `AR_TIMES_MS[15 - ar]`、`ar=0 → 即時ゲイン`
    - 修正後、FM サンプルの peak は 30000 台（以前は 124/127 が peak<10）
+7. **PCM キットが bank 128 / preset 7 のみ登録だった** → fluidsynth のドラム
+   チャンネル（ch9）は **preset 0**（GM Standard Kit）をまず参照するため
+   preset 0 にないとサイレント。SGM-V2.01.sf2 は preset 0 にキッドを置いている
+   - 修正: PCM キットを **preset 0 と preset 7 の両方**に登録（同じ kit
+     instrument 127 を指す 2 つの phdr レコード）
+   - 追加: shdr 末尾の terminator レコードを 1 つ追加（fluidsynth は sample
+     数を 1 引いて読むため必須）
+   - 修正後、ch9 のみテストで peak=32768、full MIDI にもドラムが入る
+8. **SHDR の loopstart/loopend が全サンプルで「永久ループ」になっていた**
+   - 誤: `loopstart = start`、`loopend = end` → 全サンプル（FM 含む）がループ
+   - ワンショットのはずのドラムが先頭（最大音量点）から何度も再生され
+     「ノイズ」に聞こえる原因
+   - 修正: `loopstart = loopend = end`（ループ領域ゼロ長 → 非ループ）
+   - 検証: shdr 全 222 レコードで `ls == le == end` を確認
 
 ### 2026-10-27 追記（旧・FM サイレント問題の解決）
 > 上記「既知の疑わしい点」の 1〜3 は、2 と 5 が正体（rate index 逆 + keyRange ビット誤り）。
 > 3 の「PCM キットの bag 連鎖」は ibag terminator + delta index の修正で解決済み。
 
-## 既知の疑わしい点（VLC 非動作の有力候補）
-1. **FM サンプルがほぼサイレント**（検証ツールで 124/127 が peak < 10）。
-   エンベロープ/ゲイン計算にバグがあり、音が出ない/ほぼ出ない。
-   2026-10-27 時点の `_operator_gain` は未修正のまま VLC 検証済み。
-2. **`pbag` 指針が壊れている可能性**: 現在は pbag の各エントリが
-   generatorIndex = modIndex = preset 自身（各 preset が1ジェネレータ持つ前提）。
-   pgen は 1 エントリ/preset なので整合しているはずだが要確認。
-3. **PCM キットの bag 連鎖**: 1 instrument が複数 bag を持ち（ibag の
-   連続範囲で判定）、各 bag が sampleID 1 つずつ。
-   host が「1 instrument = 1 bag」想定の場合、VLC が最後まで追えない可能性。
-   keyswitch ジェネレータ（45）方式への置き換え候補。
-4. VLC は SF2 サポートが不安定で、**GM 互換のサンプル GM soundfont と比較
-   テストした方がよい**。VLC 単体の問題か、ファイル自体の問題か切り分け未実施。
+## 解決済みだった疑わしい点（履歴）
+1. **FM サンプルがほぼサイレント**（124/127 が peak < 10）→ ADSR rate index 修正で解決
+2. **pbag 指針が壊れている可能性** → ibag terminator + delta index 修正で解決済み
+3. **PCM キットの bag 連鎖** → 1 instrument / 95 bag（keynum 各 1 個）構成は fluidsynth で動作確認済み
+4. VLC は SF2 サポートが不安定 → fluidsynth を検証基準に切り替え
 
 ## 再現コマンド
 ```
 cd d:\works\cps-music-convertor\cps1
 python make_sf2.py games\sf2ce.xml --duration 1.0
-# 検証:
-python <session>/files/verify_sf2.py voices\sf2ce.sf2
+# SF2 キット割当の検証（95/95 確認済み）:
+python verify_kit_map.py
+# program → sample 割当の確認:
+python dump_mapping.py
+# MAME のサンプルテーブル解釈との比較:
+python compare_tables.py
+# fluidsynth 再生（ドラム検証用）:
+C:\Users\niimi\AppData\Local\Temp\fluidsynth\fluidsynth-v2.6.1-win10-x64-cpp11\bin\fluidsynth.exe -F out.wav -r 44100 voices\sf2ce.sf2 "midi\sf2ce\01_Japan (Ryu) I.mid"
 ```
 
-## 次の手
-- [ ] **PCM（ドラム）パートが鳴らない問題の解消**（最重要・未解決）
-  - ch9 のノート番号 ↔ region keynum の紐付けを MIDI の実際の内容と照合
-    （`midi_stats.py` / `midi_notes.py` で ch9 のノート番号一覧を確認済みのはず）
-  - PCM 用 igen の keyRange / overrideRootKey / sampleID が正しく設定されているか
-    SF2 バイナリ側をダンプして検証（`dump_inst.py` 等）
-  - 最小 MIDI（ch9 のみ、program change 7 直後のノート 1 音）を作成し
-    fluidsynth で単独再生して切り分け
-  - SGM-V2.01.sf2 の PCM region（bank 128/preset 7）の igen 設定と比較
-- [ ] FM サイレント問題は解決済み（ADSR rate 修正 + keyRange 修正で
-      124/127 の peak<10 が解消、ユーザーが FM 鳴りを確認）
-- [ ] 構造検証ツール `files/verify_sf2.py` は旧式（`hdrl` 前提）のため
-      参考ファイル比較用 `files/verify_final.py` を使って構造確認
+## 次の手（2026-10-29 時点・最重要: PCM 音色のズレ）
+- [ ] MIDI の ch9 が実際に発行している program change / note の
+      実効リストを抽出し、`dump_mapping.py` の program→note 表と突き合わせ、
+      音色割当がシーケンス本来の割当と一致しているか確認
+- [ ] 割当が正しくても「音色が違う」なら、ADPCM 初期状態・volume table・
+      トリム挙動の差を MAME（okiadpcm.cpp / okim6295.cpp）と突合
+- [ ] 基準音を MAME で録音（Z80 シーケンス実再生）し、
+      変換 wav と相関比較してズレの正体を特定

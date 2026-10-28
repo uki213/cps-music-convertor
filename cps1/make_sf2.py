@@ -285,7 +285,12 @@ def write_sf2(
 ) -> None:
     fm_count = len(fm_samples)
     pcm_count = len(pcm_samples)
-    preset_count = fm_count + (1 if pcm_count else 0)
+    # The PCM kit is registered at BOTH bank=128/preset=0 (GM "Standard Kit",
+    # which hosts resolve the drum channel to by default) and bank=128/preset=7
+    # (GM program 8). Both preset zones point to the same kit instrument, so a
+    # drum-channel note resolves regardless of which preset the host looks up.
+    kit_preset_count = 2 if pcm_count else 0
+    preset_count = fm_count + kit_preset_count
     instrument_count = fm_count + (1 if pcm_count else 0)
     sample_count = fm_count + pcm_count
     # FM: one preset zone + one instrument zone each.
@@ -322,14 +327,21 @@ def write_sf2(
             sample["name"][:20].encode("ascii").ljust(20, b"\x00"),
             sample_offsets[idx],        # start (samples)
             sample_offsets[idx] + end,  # end (samples)
-            sample_offsets[idx],        # loopstart
-            sample_offsets[idx] + end,  # loopend
+            sample_offsets[idx] + end,  # loopstart = end (no loop)
+            sample_offsets[idx] + end,  # loopend = end   (no loop)
             sample["rate"],             # samplerate
             root & 0x7F,                # origpitch (MIDI note)
             0,                          # pitchfraction (cents/10)
             0,                          # samplelink
             0x01,                       # sampletype: 0x01 = mono
         )
+    # Mandatory shdr terminator (fluidsynth load_shdr subtracts one record).
+    shdr += struct.pack(
+        "<20sIIIIIBbhH",
+        b"EOP".ljust(20, b"\x00"),
+        0, 0, 0, 0, 0,
+        0, 0, 0, 0,
+    )
 
     # ---- phdr ----
     phdr = b""
@@ -343,12 +355,29 @@ def write_sf2(
             0, 0, 0,   # library / genre / morph
         )
     if pcm_count:
+        # Two kit presets, both at bank=128, each owning ONE preset zone
+        # (GEN_INSTRUMENT). fluidsynth assigns zones to a preset from the
+        # DELTA between consecutive phdr bagidx values (load_phdr), so the
+        # bagidx MUST be strictly increasing: preset zone i has bagidx == i.
+        #   kit0: bagidx = fm_count       -> delta 1 -> 1 zone (bank128/prog0)
+        #   kit7: bagidx = fm_count + 1   -> delta 1 -> 1 zone (bank128/prog7)
+        # Using the SAME bagidx for both (a prior bug) gave kit0 delta 0,
+        # i.e. zero zones, so the drum channel's fallback to bank128/prog0
+        # resolved to nothing and it played the FM voice instead -> "noise".
         phdr += struct.pack(
             "<20sHHHIii",
             b"CPS1 PCM".ljust(20, b"\x00"),
-            7,         # program 7 (0-based) = GM preset 8 percussion
-            128,       # bank 128: GM percussion bank (MIDI bank-select MSB default)
-            fm_count,  # preset bag index = fm_count (cumulative zone offset)
+            0,            # preset 0 = GM Standard Kit (bank 128)
+            128,          # bank 128: GM percussion bank
+            fm_count,     # preset zone index = fm_count
+            0, 0, 0,
+        )
+        phdr += struct.pack(
+            "<20sHHHIii",
+            b"CPS1 PCM".ljust(20, b"\x00"),
+            7,            # preset 7 = GM program 8 percussion
+            128,          # bank 128: GM percussion bank
+            fm_count + 1, # preset zone index = fm_count + 1 (unique, increasing)
             0, 0, 0,
         )
     # Mandatory phdr terminator (last record); pbag_idx = total preset zones.
@@ -363,18 +392,28 @@ def write_sf2(
 
     # ---- pmod / pbag ----
     # No preset modulators (pmod is empty), so every pbag entry's modndx
-    # must be 0.  genndx is cumulative: each zone owns exactly one pgen
-    # entry (GEN_INSTRUMENT), so zone i's genndx = i+1.
+    # must be 0.
+    #
+    # CRITICAL: fluidsynth's load_pbag assigns each zone's generator count
+    # as (this_genndx - prev_genndx). The LAST zone gets (terminator - last).
+    # So genndx MUST start at 0 (SGM convention: [0,1,2,...,N-1,term=N]).
+    # If we start at 1 (as before), the last zone gets (N - N) = 0 generators
+    # -> silent. This was the bug that made kit7 (bank128/prog7, the preset
+    # the drum channel resolves to via PROG=7) play nothing.
     pmod = b""
     pbag = b""
     for idx in range(preset_zone_count):
-        pbag += struct.pack("<HH", idx + 1, 0)  # genndx, modndx
+        pbag += struct.pack("<HH", idx, 0)  # genndx (0-based), modndx=0
     # Terminator: genndx = total pgen entries (= preset_zone_count), modndx=0.
+    # This value is what gives the LAST zone its (total - (total-1)) = 1 gen.
     pbag += struct.pack("<HH", preset_zone_count, 0)
-    # Each preset zone gets one generator: instrument = its index.
+    # Each preset zone gets one generator (GEN_INSTRUMENT). FM preset zone i
+    # points to instrument i. Both kit preset zones (idx = fm_count and
+    # fm_count+1) point to the single kit instrument (index fm_count).
     pgen = b""
     for idx in range(preset_zone_count):
-        pgen += struct.pack("<Hh", GEN_INSTRUMENT, idx)
+        instrument = idx if idx < fm_count else fm_count
+        pgen += struct.pack("<Hh", GEN_INSTRUMENT, instrument)
 
     # ---- inst ----
     # fluidsynth's load_ihdr (fluid_sffile.c) allocates zones to each
